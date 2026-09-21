@@ -48,11 +48,11 @@ print()
 
 git('add', '-A')
 if git('diff', '--cached', '--quiet').returncode == 0:
-    print('変更はありませんでした。')
-    sys.exit(0)
-
-stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-git('commit', '-m', f'更新 {stamp}')
+    # 新しい変更が無くても、まだ送っていない分があるかもしれないので先へ進む
+    print('新しい変更はありませんでした。')
+else:
+    stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    git('commit', '-m', f'更新 {stamp}')
 
 print()
 print('アップロードしています...')

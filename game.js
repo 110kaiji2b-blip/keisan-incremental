@@ -969,6 +969,7 @@ const el = {
   steps:        document.getElementById('steps'),
   keypad:       document.getElementById('keypad'),
   preview:      document.getElementById('answer-preview'),
+  playHint:     document.getElementById('play-hint'),
   goalFill:     document.getElementById('goal-fill'),
   goalNote:     document.getElementById('goal-note'),
   goalBadge:    document.getElementById('goal-badge'),
@@ -1411,11 +1412,7 @@ const TOUCH_DEVICE = window.matchMedia
   ? window.matchMedia('(pointer: coarse)').matches
   : 'ontouchstart' in window;
 
-if (TOUCH_DEVICE) {
-  el.input.setAttribute('inputmode', 'none');
-  const hint = document.getElementById('play-hint');
-  if (hint) hint.textContent = '画面のテンキーで入力します';
-}
+if (TOUCH_DEVICE) el.input.setAttribute('inputmode', 'none');
 
 // ボタンを押しても入力欄のフォーカスを外さない（キーボード併用のため）
 el.keypad.addEventListener('mousedown', ev => ev.preventDefault());
@@ -1426,9 +1423,13 @@ el.keypad.addEventListener('click', ev => {
   pressKey(btn.dataset.key);
 });
 
-// 指数表記のときだけ「.」「E」キーを出す
+// 案内文の出し分け（「.」「E」キーはいつでも使える）
 function renderKeypad() {
-  el.keypad.classList.toggle('sci', useSci(state));
+  const base = TOUCH_DEVICE
+    ? '画面のテンキーで入力します'
+    : 'マウスでもキーボードでも入力できます（Enter キーで決定）';
+  el.playHint.textContent = base +
+    (useSci(state) ? '　／　E は ×10ⁿ（3E50 = 3×10⁵⁰）' : '');
 }
 
 // いま入力している文字列がどんな数なのかを下に出す

@@ -12,6 +12,12 @@ import sys
 
 DRY = '--dry' in sys.argv     # 動作確認用。実際の push はしない
 
+# 日本語が文字化けしないように（deploy.bat 側で chcp 65001 している）
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 

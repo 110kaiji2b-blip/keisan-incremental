@@ -10,6 +10,8 @@ import os
 import subprocess
 import sys
 
+DRY = '--dry' in sys.argv     # 動作確認用。実際の push はしない
+
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -48,7 +50,11 @@ git('commit', '-m', f'更新 {stamp}')
 
 print()
 print('アップロードしています...')
-if git('push').returncode != 0:
+if DRY:
+    print('（--dry なので push はしません）')
+    sys.exit(0)
+# -u を付けておくと、初回でも2回目以降でもこの1行で通る
+if git('push', '-u', 'origin', 'HEAD').returncode != 0:
     print()
     print('*** 失敗しました。上のメッセージを確認してください ***')
     print('初回はブラウザで GitHub へのログインを求められます。')

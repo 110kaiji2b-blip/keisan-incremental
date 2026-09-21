@@ -26,15 +26,18 @@ python serve.py 8123
 他の人に見せるにはページの共有メニューから許可が必要です）。
 ブラウザに保存されるセーブは、ローカルで開いたときのものとは別扱いです。
 
-### 公開しなおす手順
+### 更新のしかた
 
-```bash
-python build_artifact.py
-```
+**`deploy.bat` をダブルクリックするだけ。** 中でやっているのは
 
-`index.html` から公開用の `artifact.html`（`<html>`/`<head>`/`<body>` を外したもの）を作ります。
-あとは `artifact.html` を同じ URL に publish しなおせば更新されます
-（`style.css` / `value.js` / `game.js` も一緒に上げます）。
+1. `build_artifact.py` で公開用ファイルを作りなおす
+2. `git add` → `git commit` → `git push`
+
+の4つです（中身は `deploy.py`）。GitHub Pages なら1〜2分で反映されます。
+動作だけ見たいときは `python deploy.py --dry`（push しません）。
+
+Claude の Artifact 版だけは手で publish しなおす必要があります
+（`artifact.html` と `style.css` / `value.js` / `game.js` を同じ URL に上げ直す）。
 
 ## ファイル
 
@@ -44,6 +47,7 @@ python build_artifact.py
 | `value.js` | 巨大な数の表現・計算・表示・入力の解釈（`V`） |
 | `serve.py` | 開発用のローカルサーバー（キャッシュしない） |
 | `build_artifact.py` | 公開用 `artifact.html` を作るスクリプト |
+| `deploy.bat` / `deploy.py` | ダブルクリックで GitHub Pages に反映するスクリプト |
 | `style.css` | 見た目 |
 | `game.js` | ルール・出題・報酬・アップグレード・セーブ・画面切替 |
 

@@ -1053,6 +1053,44 @@ function doPrestige() {
   renderAll();
 }
 
+/* これまでアップグレードに払った T ポイントを数えなおす。
+ * 値段はレベルだけで決まるので、まっさらな状態から買い直したときの合計と一致する。 */
+function spentOnUpgrades(s) {
+  const t = newState();
+  t.perm = s.perm;
+  applyPerm(t);
+  let total = 0;
+  UPGRADES.forEach(u => {
+    let guard = 0;
+    while (u.level(t) < u.level(s) && guard++ < 100) {
+      total += u.cost(t);
+      u.apply(t);
+    }
+  });
+  return total;
+}
+
+// 買ったアップグレードを白紙に戻し、払った分を返す（Σ・永続強化・記録はそのまま）
+function doRespec() {
+  const refund = spentOnUpgrades(state);
+  const keep = {
+    points: state.points + refund,
+    runEarned: state.runEarned,
+    sigma: state.sigma,
+    sigmaTotal: state.sigmaTotal,
+    perm: state.perm,
+    stats: state.stats,
+  };
+  state = Object.assign(newState(), keep);
+  applyPerm(state);
+  save();
+
+  round = null;
+  showScreen('calc');
+  showCalcView('idle');
+  renderAll();
+}
+
 function doReset() {
   state = newState();
   save();
@@ -1127,6 +1165,9 @@ const el = {
   perkList:     document.getElementById('perk-list'),
   btnPrestige:  document.getElementById('btn-prestige'),
   prestigeConfirm: document.getElementById('prestige-confirm'),
+  respecConfirm:   document.getElementById('respec-confirm'),
+  respecText:      document.getElementById('respec-text'),
+  btnRespec:       document.getElementById('btn-respec'),
   resetConfirm:    document.getElementById('reset-confirm'),
 };
 
@@ -1392,6 +1433,15 @@ function renderOps() {
   });
 }
 
+function renderRespec() {
+  const refund = spentOnUpgrades(state);
+  el.btnRespec.textContent = refund > 0
+    ? `アップグレードを振り直す（${fmt(refund)} T 返却）`
+    : 'アップグレードを振り直す';
+  el.btnRespec.disabled = refund <= 0;
+  el.respecConfirm.classList.add('hidden');
+}
+
 function renderStats() {
   const acc = state.stats.answered
     ? Math.round((state.stats.correct / state.stats.answered) * 100)
@@ -1443,6 +1493,7 @@ function renderAll() {
   renderAuto();
   renderAllIn();
   renderCombo();
+  renderRespec();
   renderPrestige();
   renderStats();
 }
@@ -1600,6 +1651,19 @@ function pressKey(key) {
   el.input.focus();
 }
 
+document.getElementById('btn-respec').addEventListener('click', () => {
+  el.respecText.innerHTML =
+    `買ったアップグレードをすべて白紙に戻し、<b>${fmt(spentOnUpgrades(state))} T</b> を返します。` +
+    `<br>Σ・永続強化・これまでの記録はそのまま残ります。`;
+  el.respecConfirm.classList.remove('hidden');
+});
+document.getElementById('btn-respec-yes').addEventListener('click', () => {
+  el.respecConfirm.classList.add('hidden');
+  doRespec();
+});
+document.getElementById('btn-respec-no').addEventListener('click', () => {
+  el.respecConfirm.classList.add('hidden');
+});
 document.getElementById('btn-reset').addEventListener('click', () => {
   el.resetConfirm.classList.remove('hidden');
 });

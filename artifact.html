@@ -172,7 +172,18 @@
     <div class="card status">
       <h2 class="card-title">ステータス</h2>
       <dl class="stats" id="stats"></dl>
-      <button class="btn ghost" id="btn-reset">最初からやり直す</button>
+      <div class="status-buttons">
+        <button class="btn respec" id="btn-respec">アップグレードを振り直す</button>
+        <button class="btn ghost" id="btn-reset">最初からやり直す</button>
+      </div>
+
+      <div class="confirm-row hidden" id="respec-confirm">
+        <p class="confirm-text" id="respec-text"></p>
+        <div class="confirm-btns">
+          <button class="btn danger" id="btn-respec-yes">はい、振り直す</button>
+          <button class="btn" id="btn-respec-no">やめる</button>
+        </div>
+      </div>
 
       <div class="confirm-row hidden" id="reset-confirm">
         <p class="confirm-text">セーブデータを消して最初からやり直します。Σも永続強化も消えます。</p>

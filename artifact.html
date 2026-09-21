@@ -1,0 +1,225 @@
+<title>計算するインクリメンタルゲーム（仮）</title>
+<link rel="stylesheet" href="style.css">
+
+<header class="topbar">
+  <h1>計算するインクリメンタルゲーム<span class="tentative">（仮）</span></h1>
+  <div class="wallet">
+    <span class="wallet-value" id="points">0</span>
+    <span class="wallet-unit">T</span>
+  </div>
+</header>
+
+<main class="stage">
+
+  <!-- ================= ① 計算画面 ================= -->
+  <section id="screen-calc" class="screen">
+    <div class="card calc">
+      <h2 class="card-title">計算</h2>
+
+      <!-- 待機中（初回のみ） -->
+      <div id="view-idle" class="view">
+        <p class="lead">出題される式を <b id="idle-problems">3</b> 問つづけて解きます。<br>
+          正解した問題の答えの合計に応じて T ポイントを獲得します。</p>
+        <ul class="rules">
+          <li>報酬 = ( ⌊log<sub>10</sub>(合計)⌋ + 演算ボーナス ) × 倍率（端数切り捨て）</li>
+          <li>例）合計 122 → log<sub>10</sub>(122) → <b>2 T</b></li>
+        </ul>
+        <button class="btn primary big" id="btn-start">計算スタート</button>
+      </div>
+
+      <!-- 出題中 -->
+      <div id="view-play" class="view hidden">
+        <div class="play-head">
+          <div class="steps" id="steps"></div>
+          <div class="tally">合計 <b id="running-sum">0</b></div>
+        </div>
+
+        <div class="expression-card" id="expression-card">
+          <div class="expression" id="expression">1 + 1</div>
+          <div class="expr-edit hidden" id="expr-edit"></div>
+          <div class="judge" id="judge"></div>
+        </div>
+
+        <div class="expr-tools hidden" id="expr-tools">
+          <button type="button" class="btn ghost" id="btn-edit-expr">✎ 端数をきりよくする</button>
+          <span class="manual-note" id="manual-note"></span>
+        </div>
+
+        <div class="expr-edit-tools hidden" id="expr-edit-tools">
+          <button type="button" class="btn primary" id="btn-expr-apply">この式にする</button>
+          <button type="button" class="btn" id="btn-expr-cancel">やめる</button>
+          <span class="expr-edit-msg" id="expr-edit-msg"></span>
+        </div>
+
+        <form id="answer-form" autocomplete="off">
+          <input type="text" id="answer-input" inputmode="text" placeholder="答えを入力" aria-label="答え">
+        </form>
+        <p class="preview" id="answer-preview"></p>
+
+        <!-- マウスで押せるテンキー -->
+        <div class="keypad" id="keypad">
+          <button type="button" class="key" data-key="7">7</button>
+          <button type="button" class="key" data-key="8">8</button>
+          <button type="button" class="key" data-key="9">9</button>
+          <button type="button" class="key fn" data-key="back" aria-label="1文字消す">←</button>
+
+          <button type="button" class="key" data-key="4">4</button>
+          <button type="button" class="key" data-key="5">5</button>
+          <button type="button" class="key" data-key="6">6</button>
+          <button type="button" class="key fn" data-key="clear" aria-label="すべて消す">C</button>
+
+          <button type="button" class="key" data-key="1">1</button>
+          <button type="button" class="key" data-key="2">2</button>
+          <button type="button" class="key" data-key="3">3</button>
+          <button type="button" class="key enter" data-key="enter">決定</button>
+
+          <button type="button" class="key zero" data-key="0">0</button>
+          <button type="button" class="key sci-key" data-key=".">.</button>
+          <button type="button" class="key sci-key" data-key="e" aria-label="10のn乗">E</button>
+        </div>
+
+        <div class="feedback" id="feedback"></div>
+        <p class="hint" id="play-hint">マウスでもキーボードでも入力できます（Enter キーで決定）</p>
+      </div>
+
+      <!-- オート計算 -->
+      <div class="auto-row hidden" id="auto-row">
+        <label class="auto-switch">
+          <input type="checkbox" id="auto-toggle">
+          <span>オート計算</span>
+        </label>
+        <span class="auto-info" id="auto-info"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ② ラウンド結果画面 ================= -->
+  <section id="screen-result" class="screen hidden">
+    <div class="card result">
+      <h2 class="card-title">ラウンド結果</h2>
+
+      <div class="badge-row">
+        <span class="badge" id="result-badge">3問中 3問 正解</span>
+      </div>
+
+      <!-- 答え合わせ -->
+      <ol class="answer-list" id="answer-list"></ol>
+
+      <!-- 合計 → 桁 -->
+      <div class="sum-block">
+        <p class="block-label" id="sum-label">正解した答えを合計</p>
+        <div class="sum-formula" id="sum-formula"></div>
+        <div class="sum-digits" id="sum-digits"></div>
+        <p class="digit-note" id="digit-note"></p>
+      </div>
+
+      <!-- 計算式の内訳 -->
+      <div class="breakdown" id="breakdown"></div>
+
+      <!-- 獲得 -->
+      <div class="gain-block">
+        <div class="gain">+<b id="gain">0</b><span class="gain-unit">T</span></div>
+        <p class="best-note hidden" id="best-note">自己ベスト更新！</p>
+        <p class="points-flow" id="points-flow"></p>
+      </div>
+
+      <!-- 次の桁まで -->
+      <div class="next-block" id="next-block">
+        <div class="next-bar"><div class="next-fill" id="next-fill"></div></div>
+        <p class="next-note" id="next-note"></p>
+      </div>
+
+      <!-- 最終目標 -->
+      <div class="goal-block">
+        <p class="block-label">最終目標　合計 10<sup>10<sup>100</sup></sup></p>
+        <div class="goal-bar"><div class="goal-fill" id="goal-fill"></div></div>
+        <p class="goal-note" id="goal-note"></p>
+        <p class="goal-badge hidden" id="goal-badge">目標達成！ 合計が 10^10^100 を超えました</p>
+      </div>
+    </div>
+
+    <div class="gobar">
+      <button class="btn primary big" id="btn-to-upgrade">アップグレードへ</button>
+    </div>
+  </section>
+
+  <!-- ================= ③ アップグレード画面 ================= -->
+  <section id="screen-upgrade" class="screen hidden">
+
+    <div class="card upgrades">
+      <h2 class="card-title">アップグレード</h2>
+      <div id="upgrade-list" class="upgrade-list"></div>
+
+      <div class="ops-box">
+        <h3 class="sub-title">使用する演算</h3>
+        <div class="ops" id="ops"></div>
+        <p class="hint">使用中の演算の種類 − 1 が「演算ボーナス」として報酬に加算されます。</p>
+      </div>
+    </div>
+
+    <div class="card status">
+      <h2 class="card-title">ステータス</h2>
+      <dl class="stats" id="stats"></dl>
+      <button class="btn ghost" id="btn-reset">最初からやり直す</button>
+
+      <div class="confirm-row hidden" id="reset-confirm">
+        <p class="confirm-text">セーブデータを消して最初からやり直します。Σも永続強化も消えます。</p>
+        <div class="confirm-btns">
+          <button class="btn danger" id="btn-reset-yes">はい、消す</button>
+          <button class="btn" id="btn-reset-no">やめる</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="gobar two">
+      <button class="btn" id="btn-to-prestige">転生 <span class="sigma-chip" id="sigma-chip">Σ 0</span></button>
+      <button class="btn primary big" id="btn-to-calc">計算に行く</button>
+    </div>
+  </section>
+
+  <!-- ================= ④ 転生画面 ================= -->
+  <section id="screen-prestige" class="screen hidden">
+
+    <div class="card prestige">
+      <h2 class="card-title">転生</h2>
+      <p class="lead">いままでの強化をすべて手放して最初からやり直し、かわりに <b>Σポイント</b> を受け取ります。<br>
+        Σは転生しても消えず、報酬を永続的に伸ばします。</p>
+
+      <div class="sigma-block">
+        <p class="block-label">いま転生すると</p>
+        <div class="sigma-gain">+<b id="sigma-gain">0</b><span class="sigma-unit">Σ</span></div>
+        <div class="sigma-bar"><div class="sigma-fill" id="sigma-fill"></div></div>
+        <p class="sigma-note" id="sigma-note"></p>
+      </div>
+
+      <p class="sigma-formula" id="sigma-formula"></p>
+      <button class="btn danger big" id="btn-prestige">転生する</button>
+
+      <div class="confirm-row hidden" id="prestige-confirm">
+        <p class="confirm-text">いまの強化と所持Tポイントはリセットされます。よろしいですか？</p>
+        <div class="confirm-btns">
+          <button class="btn danger" id="btn-prestige-yes">はい、転生する</button>
+          <button class="btn" id="btn-prestige-no">やめる</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card perks">
+      <h2 class="card-title">Σで買う永続強化</h2>
+      <div class="sigma-wallet">
+        所持 <b id="sigma-have">0</b> Σ　／　累計 <b id="sigma-total">0</b> Σ（いまの報酬ボーナス <b id="sigma-power">+0%</b>）
+      </div>
+      <div id="perk-list" class="upgrade-list"></div>
+      <p class="hint">永続強化は買った瞬間から有効で、転生してもそのまま残ります。</p>
+    </div>
+
+    <div class="gobar two">
+      <button class="btn" id="btn-prestige-back">アップグレードへ</button>
+      <button class="btn primary big" id="btn-prestige-calc">計算に行く</button>
+    </div>
+  </section>
+
+</main>
+
+<script src="value.js"></script>
+<script src="game.js"></script>

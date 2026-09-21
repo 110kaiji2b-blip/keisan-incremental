@@ -93,23 +93,28 @@ function sigmaNeed(s) {
 function sigmaRate(s)    { return SIGMA_RATES[s.perm.sigmaPower]; }
 function sigmaBonus(s)   { return sigmaRate(s) * s.sigmaTotal; }
 
+/* 報酬の刻み。
+ * ⌊log(合計)⌋ のままだと「桁が変わるまで1Tも増えない」ので、
+ * 10倍の細かさで数える（= 合計が少し伸びただけでも報酬が増える）。 */
+const REWARD_SCALE = 10;
+
+// アップグレードの値段。報酬が10倍細かくなったぶん、ここも引き上げる
+const COST_SCALE = 5;
+function costOf(def, s) { return V.mul(def.cost(s), COST_SCALE); }
+
 function multiplier(s)   { return 1 + 0.5 * s.multLevel + sigmaBonus(s); }
 function enabledOps(s)   { return OP_ORDER.filter(id => s.unlocked[id] && s.enabled[id]); }
-function varietyBonus(s) { return Math.max(0, enabledOps(s).length - 1); }
+function varietyBonus(s) { return REWARD_SCALE * Math.max(0, enabledOps(s).length - 1); }
 function partialRate(s)  { return [0, 0.25, 0.5, 0.75][s.partialLevel] || 0; }
-function perfectBonus(s, perfect) { return perfect ? s.perfectLevel : 0; }
+function perfectBonus(s, perfect) { return perfect ? REWARD_SCALE * s.perfectLevel : 0; }
 
 // ⌊log_b(sum)⌋ を整数演算で正確に求める（巨大な合計でもズレない）
 function baseFromSum(sum, s) {
   const b = s.logBase;
-  if (V.isSci(sum)) {
-    // 巨大な数は log で一気に求める（1桁ずつ数えていたら終わらない）
-    return Math.floor(V.log10(sum) / Math.log10(b));
-  }
-  if (sum < b) return 0;
-  let n = 0, v = b;
-  while (v <= sum) { v *= b; n += 1; }
-  return n;
+  const l = V.log10(sum);
+  if (!isFinite(l) || l < 0) return 0;
+  // log を REWARD_SCALE 倍の細かさで数える（端数は切り捨て）
+  return Math.floor(l / Math.log10(b) * REWARD_SCALE + 1e-9);
 }
 
 // 1問の貢献分（不正解でも部分点があれば一部が合計に入る）
@@ -119,7 +124,7 @@ function contribution(p, s) {
   return rate ? V.scale(p.answer, rate) : 0;
 }
 
-function permBoost(s) { return (s.perm && s.perm.baseBoost) || 0; }
+function permBoost(s) { return REWARD_SCALE * ((s.perm && s.perm.baseBoost) || 0); }
 
 /* ---- 4つの「伸ばし方」---- */
 
@@ -280,8 +285,8 @@ const UPGRADES = [
     max: 8,                       // 10 → 2 まで
     level: s => 10 - s.logBase,
     cost:  s => Math.round(50 * Math.pow(4, 10 - s.logBase)),
-    now:   s => `報酬の基礎値は ⌊log${sub10(s.logBase)}(合計)⌋`,
-    next:  s => `基礎値が ⌊log${sub10(s.logBase - 1)}(合計)⌋ になり、同じ合計でも報酬が増える`,
+    now:   s => `報酬の基礎値は ⌊log${sub10(s.logBase)}(合計) × ${REWARD_SCALE}⌋`,
+    next:  s => `基礎値が ⌊log${sub10(s.logBase - 1)}(合計) × ${REWARD_SCALE}⌋ になり、同じ合計でも報酬が増える`,
     apply: s => { s.logBase -= 1; },
   },
   {
@@ -785,7 +790,7 @@ function finishRound() {
  * ------------------------------------------------------------- */
 function buy(upg) {
   if (upg.level(state) >= upg.max) return;
-  const cost = upg.cost(state);
+  const cost = costOf(upg, state);
   if (V.cmp(state.points, cost) < 0) return;
   state.points = V.sub(state.points, cost);
   upg.apply(state);
@@ -1067,7 +1072,7 @@ function spentOnUpgrades(s) {
     let guard = 0;
     let acc = 0;
     while (u.level(t) < u.level(s) && guard++ < 10000) {
-      acc = V.add(acc, u.cost(t));
+      acc = V.add(acc, costOf(u, t));
       u.apply(t);
     }
     total = V.add(total, acc);
@@ -1268,18 +1273,17 @@ function renderResult(r) {
   el.sumDigits.innerHTML = V.isSci(r.sum)
     ? `<span class="digit huge">${fmtH(r.sum)}</span>`
     : String(r.sum).split('').map(d => `<span class="digit">${d}</span>`).join('');
+  const logv = V.log10(r.sum) / Math.log10(b);
   el.digitNote.innerHTML = V.cmp(r.sum, 1) < 0
     ? '合計が 1 以上になると報酬が発生します'
     : V.isSci(r.sum)
-      ? `${b} を <b>${fmt(r.base)}</b> 回かけても届く大きさ → ⌊log<sub>${b}</sub>(合計)⌋ = <b>${fmt(r.base)}</b>`
-      : b === 10
-        ? `<b>${String(r.sum).length}</b> 桁 なので ⌊log<sub>10</sub>(${fmt(r.sum)})⌋ = <b>${r.base}</b>`
-        : `${b} を <b>${r.base}</b> 回かけても届く大きさ → ⌊log<sub>${b}</sub>(${fmt(r.sum)})⌋ = <b>${r.base}</b>`;
+      ? `log<sub>${b}</sub>(合計) ≒ ${fmt(Math.round(logv))} → ×${REWARD_SCALE} して 基礎値 <b>${fmt(r.base)}</b>`
+      : `log<sub>${b}</sub>(${fmt(r.sum)}) = ${logv.toFixed(2)} → ×${REWARD_SCALE} して 基礎値 <b>${fmt(r.base)}</b>`;
 
   // --- 内訳 ---
   const parts = [fmt(state.expRewardLevel ? r.boosted : r.base), r.bonus];
   el.breakdown.innerHTML =
-    row(`⌊log<sub>${b}</sub>(合計)⌋`, fmt(r.base)) +
+    row(`⌊log<sub>${b}</sub>(合計) × ${REWARD_SCALE}⌋`, fmt(r.base)) +
     (state.expRewardLevel
       ? row(`基礎値の ${expRewardPow(state).toFixed(2)} 乗`, fmt(r.boosted)) : '') +
     row('演算ボーナス', `+${r.bonus}`) +
@@ -1302,11 +1306,11 @@ function renderResult(r) {
   // --- あと少しで次の桁 ---
   el.nextBlock.classList.toggle('hidden', V.isSci(r.sum));
   if (V.cmp(r.sum, 1) >= 0) {
-    const next = Math.pow(b, r.base + 1);
-    const frac = V.log10(r.sum) / Math.log10(b) - r.base;
+    const frac = (V.log10(r.sum) / Math.log10(b)) * REWARD_SCALE - r.base;
     el.nextFill.style.width = `${Math.max(0, Math.min(100, frac * 100))}%`;
-    el.nextNote.innerHTML = (!V.isSci(r.sum) && Number.isSafeInteger(next))
-      ? `あと <b>${fmt(next - r.sum)}</b> で合計が ${fmt(next)} に届き、基礎値が <b>${r.base + 1}</b> に上がる`
+    const nextSum = Math.pow(b, (r.base + 1) / REWARD_SCALE);
+    el.nextNote.innerHTML = (!V.isSci(r.sum) && isFinite(nextSum))
+      ? `あと <b>${fmt(Math.ceil(nextSum - r.sum))}</b> 合計を伸ばすと基礎値が <b>${fmt(r.base + 1)}</b> に上がる`
       : `もう少し合計を伸ばすと基礎値が <b>${fmt(r.base + 1)}</b> に上がる`;
   } else {
     el.nextFill.style.width = '0%';
@@ -1356,12 +1360,12 @@ function countUp(node, to, ms = 700) {
 }
 
 // アップグレード／永続強化に共通のカード描画
-function renderCards(container, defs, wallet, unit, onBuy) {
+function renderCards(container, defs, wallet, unit, onBuy, priceOf) {
   container.innerHTML = '';
   defs.forEach(def => {
     const lv = def.level(state);
     const maxed = lv >= def.max;
-    const cost = maxed ? null : def.cost(state);
+    const cost = maxed ? null : priceOf(def, state);
     const affordable = !maxed && V.cmp(wallet, cost) >= 0;
 
     const div = document.createElement('div');
@@ -1389,7 +1393,7 @@ function renderCards(container, defs, wallet, unit, onBuy) {
 }
 
 function renderUpgrades() {
-  renderCards(el.upgradeList, UPGRADES, state.points, 'T', buy);
+  renderCards(el.upgradeList, UPGRADES, state.points, 'T', buy, costOf);
 }
 
 function renderPrestige() {
@@ -1414,7 +1418,7 @@ function renderPrestige() {
   el.prestigeConfirm.classList.add('hidden');
   el.btnPrestige.textContent = gain >= 1 ? `転生して ${fmt(gain)} Σ を受け取る` : 'まだ転生できない';
 
-  renderCards(el.perkList, PERKS, state.sigma, 'Σ', buyPerk);
+  renderCards(el.perkList, PERKS, state.sigma, 'Σ', buyPerk, (d, s) => d.cost(s));
 }
 
 function renderOps() {
@@ -1471,7 +1475,7 @@ function renderStats() {
         ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × ${state.terms}個`
         : `${state.digits}桁の数字 × ${state.terms}個`],
     ['演算ボーナス', `+${varietyBonus(state)}`],
-    ['報酬の基礎値', `⌊log${sub10(state.logBase)}(合計)⌋`],
+    ['報酬の基礎値', `⌊log${sub10(state.logBase)}(合計) × ${REWARD_SCALE}⌋`],
     ['パーフェクトボーナス', state.perfectLevel ? `+${state.perfectLevel}` : 'なし'],
     ['部分点', state.partialLevel ? `${partialRate(state) * 100}%` : 'なし'],
     ['報酬倍率', `×${multiplier(state).toFixed(2)}`],

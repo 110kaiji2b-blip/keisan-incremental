@@ -28,8 +28,8 @@
         <p class="lead">出題される式を <b id="idle-problems">3</b> 問つづけて解きます。<br>
           正解した問題の答えの合計に応じて T ポイントを獲得します。</p>
         <ul class="rules">
-          <li>報酬 = ( ⌊log<sub>10</sub>(合計)⌋ + 演算ボーナス ) × 倍率（端数切り捨て）</li>
-          <li>例）合計 122 → log<sub>10</sub>(122) → <b>2 T</b></li>
+          <li>報酬 = ( ⌊log<sub>10</sub>(合計) × 10⌋ + 演算ボーナス ) × 倍率（端数切り捨て）</li>
+          <li>例）合計 122 → log<sub>10</sub>(122) = 2.08 → <b>20 T</b></li>
         </ul>
         <button class="btn primary big" id="btn-start">計算スタート</button>
       </div>

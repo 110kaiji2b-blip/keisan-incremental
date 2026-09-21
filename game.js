@@ -83,8 +83,9 @@ const SIGMA_RATES = [0.10, 0.25, 0.50, 1.00];
 const SIGMA_PER_DECADE = 4;
 
 function sigmaGain(s) {
-  if (s.runEarned < SIGMA_DIV) return 0;
-  return Math.floor(SIGMA_PER_DECADE * Math.log10(s.runEarned / SIGMA_DIV)) + 1;
+  if (V.cmp(s.runEarned, SIGMA_DIV) < 0) return 0;
+  const decades = V.log10(s.runEarned) - Math.log10(SIGMA_DIV);
+  return Math.floor(SIGMA_PER_DECADE * decades) + 1;
 }
 function sigmaNeed(s) {
   return Math.ceil(SIGMA_DIV * Math.pow(10, sigmaGain(s) / SIGMA_PER_DECADE));
@@ -138,13 +139,15 @@ function interestRate(s) { return 0.02 * (s.interestLevel || 0); }
 function expRewardPow(s) { return 1 + 0.05 * (s.expRewardLevel || 0); }
 function boostedBase(sum, s) {
   const b = baseFromSum(sum, s);
-  return s.expRewardLevel ? Math.pow(b, expRewardPow(s)) : b;
+  if (!s.expRewardLevel || b <= 1) return b;
+  return V.pow(b, expRewardPow(s));   // 1e308 を超えても V が受け止める
 }
 
 function rewardFor(sum, s, perfect) {
-  const raw = boostedBase(sum, s) + varietyBonus(s) + perfectBonus(s, perfect) + permBoost(s);
-  const gain = Math.floor(raw * multiplier(s) * comboMult(s) * allInMult(s));
-  return isFinite(gain) ? Math.max(0, gain) : Number.MAX_VALUE;
+  const extra = varietyBonus(s) + perfectBonus(s, perfect) + permBoost(s);
+  const raw = V.add(boostedBase(sum, s), extra);
+  const gain = V.scale(raw, multiplier(s) * comboMult(s) * allInMult(s));
+  return V.cmp(gain, 0) > 0 ? gain : 0;
 }
 
 /* ---------------------------------------------------------------
@@ -318,11 +321,11 @@ const UPGRADES = [
   {
     id: 'expReward',
     name: '指数的報酬',
-    max: 6,
+    max: Infinity,                       // 上限なし
     level: s => s.expRewardLevel,
-    cost:  s => Math.round(800 * Math.pow(5, s.expRewardLevel)),
+    cost:  s => V.mul(800, V.pow(5, s.expRewardLevel)),
     now:   s => (s.expRewardLevel
-      ? `報酬の基礎値が ${expRewardPow(s).toFixed(2)} 乗される`
+      ? `報酬の基礎値が ${expRewardPow(s).toFixed(2)} 乗される（上限なし）`
       : '報酬の基礎値はそのまま'),
     next:  s => `基礎値が ${(1 + 0.05 * (s.expRewardLevel + 1)).toFixed(2)} 乗される（桁が大きいほど効く）`,
     apply: s => { s.expRewardLevel += 1; },
@@ -748,7 +751,7 @@ function finishRound() {
   const mult = multiplier(state);
   const gain = rewardFor(sum, state, perfect);
   const before = state.points;
-  const isBest = gain > 0 && gain > state.stats.best;
+  const isBest = V.cmp(gain, 0) > 0 && V.cmp(gain, state.stats.best) > 0;
 
   // 最終目標（合計 10^10^100）への到達度を記録
   const tower = V.tower(sum);
@@ -756,17 +759,17 @@ function finishRound() {
   const justReached = !state.stats.goal && tower >= GOAL_TOWER;
   if (justReached) state.stats.goal = true;
 
-  state.points += gain;
-  state.runEarned += gain;
+  state.points = V.add(state.points, gain);
+  state.runEarned = V.add(state.runEarned, gain);
 
   // 利息（使わずに貯めておくほど増える）
-  const interest = state.interestLevel ? Math.floor(state.points * interestRate(state)) : 0;
-  if (interest > 0) {
-    state.points += interest;
-    state.runEarned += interest;
+  const interest = state.interestLevel ? V.scale(state.points, interestRate(state)) : 0;
+  if (V.cmp(interest, 0) > 0) {
+    state.points = V.add(state.points, interest);
+    state.runEarned = V.add(state.runEarned, interest);
   }
   state.stats.rounds += 1;
-  state.stats.earned += gain;
+  state.stats.earned = V.add(state.stats.earned, gain);
   if (isBest) state.stats.best = gain;
   save();
 
@@ -783,8 +786,8 @@ function finishRound() {
 function buy(upg) {
   if (upg.level(state) >= upg.max) return;
   const cost = upg.cost(state);
-  if (state.points < cost) return;
-  state.points -= cost;
+  if (V.cmp(state.points, cost) < 0) return;
+  state.points = V.sub(state.points, cost);
   upg.apply(state);
   save();
   renderAll();
@@ -957,8 +960,8 @@ function applyEdit() {
   const L = Math.floor(V.log10(vals[0]));
   if (isFinite(L) && L >= 0 && L <= MANUAL_MAX_LOG) {
     const cost = manualCost(L, state);
-    if (cost <= state.points) {
-      state.points -= cost;
+    if (V.cmp(cost, state.points) <= 0) {
+      state.points = V.sub(state.points, cost);
       state.manualLog = L;
       regenerateRest();
     }
@@ -1059,13 +1062,15 @@ function spentOnUpgrades(s) {
   const t = newState();
   t.perm = s.perm;
   applyPerm(t);
-  let total = 0;
+  let total = 0;   // 巨大になることがあるので V で足す
   UPGRADES.forEach(u => {
     let guard = 0;
-    while (u.level(t) < u.level(s) && guard++ < 100) {
-      total += u.cost(t);
+    let acc = 0;
+    while (u.level(t) < u.level(s) && guard++ < 10000) {
+      acc = V.add(acc, u.cost(t));
       u.apply(t);
     }
+    total = V.add(total, acc);
   });
   return total;
 }
@@ -1074,7 +1079,7 @@ function spentOnUpgrades(s) {
 function doRespec() {
   const refund = spentOnUpgrades(state);
   const keep = {
-    points: state.points + refund,
+    points: V.add(state.points, refund),
     runEarned: state.runEarned,
     sigma: state.sigma,
     sigmaTotal: state.sigmaTotal,
@@ -1272,11 +1277,11 @@ function renderResult(r) {
         : `${b} を <b>${r.base}</b> 回かけても届く大きさ → ⌊log<sub>${b}</sub>(${fmt(r.sum)})⌋ = <b>${r.base}</b>`;
 
   // --- 内訳 ---
-  const parts = [fmt(state.expRewardLevel ? Math.floor(r.boosted) : r.base), r.bonus];
+  const parts = [fmt(state.expRewardLevel ? r.boosted : r.base), r.bonus];
   el.breakdown.innerHTML =
     row(`⌊log<sub>${b}</sub>(合計)⌋`, fmt(r.base)) +
     (state.expRewardLevel
-      ? row(`基礎値の ${expRewardPow(state).toFixed(2)} 乗`, fmt(Math.floor(r.boosted))) : '') +
+      ? row(`基礎値の ${expRewardPow(state).toFixed(2)} 乗`, fmt(r.boosted)) : '') +
     row('演算ボーナス', `+${r.bonus}`) +
     (state.perfectLevel
       ? row('パーフェクトボーナス', r.perfectAdd ? `+${r.perfectAdd}` : '—（全問正解で +' + state.perfectLevel + '）')
@@ -1289,10 +1294,10 @@ function renderResult(r) {
 
   // --- 獲得（0 から数え上げ） ---
   countUp(el.gain, r.gain);
-  el.gain.parentElement.classList.toggle('zero', r.gain === 0);
+  el.gain.parentElement.classList.toggle('zero', V.cmp(r.gain, 0) === 0);
   el.gain.parentElement.classList.toggle('long', fmt(r.gain).length > 7);
   el.bestNote.classList.toggle('hidden', !r.isBest);
-  el.pointsFlow.innerHTML = `所持 ${fmt(r.before)} → <b>${fmt(r.before + r.gain)}</b> T`;
+  el.pointsFlow.innerHTML = `所持 ${fmt(r.before)} → <b>${fmt(V.add(r.before, r.gain))}</b> T`;
 
   // --- あと少しで次の桁 ---
   el.nextBlock.classList.toggle('hidden', V.isSci(r.sum));
@@ -1335,6 +1340,11 @@ function renderGoal(r) {
 // 数字を 0 から目標値まで数え上げる演出
 function countUp(node, to, ms = 700) {
   node.classList.remove('pop');
+  if (V.isSci(to)) {            // 数えきれない大きさは、そのまま表示する
+    node.textContent = fmt(to);
+    node.classList.add('pop');
+    return;
+  }
   if (to <= 0) { node.textContent = '0'; return; }
   const start = performance.now();
   (function step(now) {
@@ -1352,14 +1362,16 @@ function renderCards(container, defs, wallet, unit, onBuy) {
     const lv = def.level(state);
     const maxed = lv >= def.max;
     const cost = maxed ? null : def.cost(state);
-    const affordable = !maxed && wallet >= cost;
+    const affordable = !maxed && V.cmp(wallet, cost) >= 0;
 
     const div = document.createElement('div');
     div.className = 'upg' + (maxed ? ' maxed' : affordable ? ' affordable' : '');
     div.innerHTML =
       `<div class="upg-head">
          <span class="upg-name">${def.name}</span>
-         <span class="upg-level">${def.max === 1 ? (maxed ? '解放済み' : '未解放') : `Lv. ${lv} / ${def.max}`}</span>
+         <span class="upg-level">${def.max === 1
+           ? (maxed ? '解放済み' : '未解放')
+           : isFinite(def.max) ? `Lv. ${lv} / ${def.max}` : `Lv. ${fmt(lv)}（上限なし）`}</span>
        </div>
        <p class="upg-now">いま: ${def.now(state)}</p>` +
       (maxed ? '' : `<p class="upg-next">次: ${def.next(state)}</p>`);
@@ -1435,10 +1447,10 @@ function renderOps() {
 
 function renderRespec() {
   const refund = spentOnUpgrades(state);
-  el.btnRespec.textContent = refund > 0
+  el.btnRespec.textContent = V.cmp(refund, 0) > 0
     ? `アップグレードを振り直す（${fmt(refund)} T 返却）`
     : 'アップグレードを振り直す';
-  el.btnRespec.disabled = refund <= 0;
+  el.btnRespec.disabled = V.cmp(refund, 0) <= 0;
   el.respecConfirm.classList.add('hidden');
 }
 

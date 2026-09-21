@@ -132,7 +132,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   margin-bottom: 14px;
 }
 .steps { display: flex; gap: 8px; }
@@ -610,6 +611,38 @@ body {
 }
 .confirm-text { margin: 0 0 12px; font-size: 13px; }
 .confirm-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ---------- 連続正解・一発勝負 ---------- */
+.head-right { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.combo {
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: rgba(240, 151, 90, .16);
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.allin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.allin-label { font-size: 14px; font-weight: 600; }
+.btn.tiny { padding: 4px 12px; font-size: 16px; line-height: 1.2; }
+.allin-value {
+  min-width: 5.5em;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.allin-info { font-size: 12px; color: var(--warn); font-variant-numeric: tabular-nums; }
 
 /* ---------- オート計算 ---------- */
 .auto-row {

@@ -38,7 +38,10 @@
       <div id="view-play" class="view hidden">
         <div class="play-head">
           <div class="steps" id="steps"></div>
-          <div class="tally">合計 <b id="running-sum">0</b></div>
+          <div class="head-right">
+            <span class="combo hidden" id="combo"></span>
+            <span class="tally">合計 <b id="running-sum">0</b></span>
+          </div>
         </div>
 
         <div class="expression-card" id="expression-card">
@@ -87,6 +90,15 @@
 
         <div class="feedback" id="feedback"></div>
         <p class="hint" id="play-hint">マウスでもキーボードでも入力できます（Enter キーで決定）</p>
+      </div>
+
+      <!-- 一発勝負 -->
+      <div class="allin-row hidden" id="allin-row">
+        <span class="allin-label">一発勝負</span>
+        <button type="button" class="btn tiny" id="allin-minus">−</button>
+        <span class="allin-value" id="allin-value">0</span>
+        <button type="button" class="btn tiny" id="allin-plus">＋</button>
+        <span class="allin-info" id="allin-info"></span>
       </div>
 
       <!-- オート計算 -->

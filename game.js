@@ -34,6 +34,12 @@ function newState() {
     problems: 3,   // 1ラウンドの出題数
     multLevel: 0,    // 報酬倍率レベル
     logBase: 10,     // 報酬に使う対数の底（下げるほど報酬が伸びる）
+    comboLevel: 0,    // 連続正解ボーナス
+    combo: 0,         // いまの連続正解数
+    allIn: false,     // 一発勝負を解放したか
+    allInCut: 0,      // 出題数を何問減らすか
+    interestLevel: 0, // ラウンドごとの利息
+    expRewardLevel: 0,// 基礎値を累乗する
     auto: false,      // オート計算を解放したか
     autoOn: true,     // オート計算の入/切
     autoSpeed: 0,     // オートの速さ
@@ -114,9 +120,30 @@ function contribution(p, s) {
 
 function permBoost(s) { return (s.perm && s.perm.baseBoost) || 0; }
 
+/* ---- 4つの「伸ばし方」---- */
+
+// ① 連続正解：切らさないほど倍率が伸びる。1問でも間違えると 0 に戻る
+function comboCap(s)  { return 20 * (s.comboLevel || 0); }
+function comboCount(s){ return Math.min(s.combo || 0, comboCap(s)); }
+function comboMult(s) { return s.comboLevel ? 1 + 0.05 * comboCount(s) : 1; }
+
+// ② 一発勝負：1ラウンドの問題を減らすほど倍率が上がる
+function roundSize(s) { return Math.max(1, s.problems - (s.allInCut || 0)); }
+function allInMult(s) { return 1 + 0.3 * (s.allInCut || 0); }
+
+// ③ 利息：ラウンドが終わるたびに所持Tが増える
+function interestRate(s) { return 0.02 * (s.interestLevel || 0); }
+
+// ④ 指数的報酬：基礎値そのものを累乗する（桁が大きいほど効く）
+function expRewardPow(s) { return 1 + 0.05 * (s.expRewardLevel || 0); }
+function boostedBase(sum, s) {
+  const b = baseFromSum(sum, s);
+  return s.expRewardLevel ? Math.pow(b, expRewardPow(s)) : b;
+}
+
 function rewardFor(sum, s, perfect) {
-  const raw = baseFromSum(sum, s) + varietyBonus(s) + perfectBonus(s, perfect) + permBoost(s);
-  const gain = Math.floor(raw * multiplier(s));
+  const raw = boostedBase(sum, s) + varietyBonus(s) + perfectBonus(s, perfect) + permBoost(s);
+  const gain = Math.floor(raw * multiplier(s) * comboMult(s) * allInMult(s));
   return isFinite(gain) ? Math.max(0, gain) : Number.MAX_VALUE;
 }
 
@@ -253,6 +280,52 @@ const UPGRADES = [
     now:   s => `報酬の基礎値は ⌊log${sub10(s.logBase)}(合計)⌋`,
     next:  s => `基礎値が ⌊log${sub10(s.logBase - 1)}(合計)⌋ になり、同じ合計でも報酬が増える`,
     apply: s => { s.logBase -= 1; },
+  },
+  {
+    id: 'combo',
+    name: '連続正解ボーナス',
+    max: 5,
+    level: s => s.comboLevel,
+    cost:  s => Math.round(200 * Math.pow(3, s.comboLevel)),
+    now:   s => (s.comboLevel
+      ? `連続正解1つにつき報酬 +5%（最大 ${comboCap(s)} 連鎖 = +${comboCap(s) * 5}%）`
+      : '連続正解しても何も起きない'),
+    next:  s => `最大 ${20 * (s.comboLevel + 1)} 連鎖まで伸びる（+${20 * (s.comboLevel + 1) * 5}%）`,
+    apply: s => { s.comboLevel += 1; },
+  },
+  {
+    id: 'interest',
+    name: '利息',
+    max: 10,
+    level: s => s.interestLevel,
+    cost:  s => Math.round(300 * Math.pow(2.5, s.interestLevel)),
+    now:   s => (s.interestLevel
+      ? `ラウンドが終わるたび、所持Tポイントが +${(interestRate(s) * 100).toFixed(0)}%`
+      : '所持Tポイントは増えない'),
+    next:  s => `ラウンドごとに所持Tポイントが +${((s.interestLevel + 1) * 2)}%`,
+    apply: s => { s.interestLevel += 1; },
+  },
+  {
+    id: 'allIn',
+    name: '一発勝負',
+    max: 1,
+    level: s => (s.allIn ? 1 : 0),
+    cost:  () => 400,
+    now:   s => (s.allIn ? '1ラウンドの問題数を減らして倍率を上げられる' : '問題数は減らせない'),
+    next:  () => '1問減らすごとに報酬 ×1.3（計算画面で切り替え）',
+    apply: s => { s.allIn = true; },
+  },
+  {
+    id: 'expReward',
+    name: '指数的報酬',
+    max: 6,
+    level: s => s.expRewardLevel,
+    cost:  s => Math.round(800 * Math.pow(5, s.expRewardLevel)),
+    now:   s => (s.expRewardLevel
+      ? `報酬の基礎値が ${expRewardPow(s).toFixed(2)} 乗される`
+      : '報酬の基礎値はそのまま'),
+    next:  s => `基礎値が ${(1 + 0.05 * (s.expRewardLevel + 1)).toFixed(2)} 乗される（桁が大きいほど効く）`,
+    apply: s => { s.expRewardLevel += 1; },
   },
   {
     id: 'auto',
@@ -467,6 +540,17 @@ function manualCost(L, s) {
 
 const MANUAL_MAX_LOG = 1e300;   // これ以上は数として扱えない
 
+/* 手で書きかえられる大きさの上限。
+ * アップグレードで出せる最大＋少しの余裕まで。
+ * 「端数をきりよくする」ためのものなので、桁を飛び越えることはできない。 */
+function maxAutoLog(s) {
+  return s.sciMode ? 9 * Math.pow(10, expOrder(s)) : s.digits;
+}
+function manualLimit(s) {
+  const m = maxAutoLog(s);
+  return m + Math.max(1, m * 0.05);
+}
+
 // 手で 10^15 より大きい数を指定したときは、指数表記でないと表示も計算もできない
 function useSci(s) {
   return s.sciMode || (s.manualLog !== null && s.manualLog >= 15);
@@ -585,7 +669,7 @@ let round = null;   // { problems: [], index: 0 }
 
 function startRound() {
   round = {
-    problems: Array.from({ length: state.problems }, () => makeProblem(state)),
+    problems: Array.from({ length: roundSize(state) }, () => makeProblem(state)),
     index: 0,
   };
   locked = false;
@@ -616,7 +700,12 @@ function submitAnswer(raw) {
   p.correct = valid && V.eq(value, p.answer);
 
   state.stats.answered += 1;
-  if (p.correct) state.stats.correct += 1;
+  if (p.correct) {
+    state.stats.correct += 1;
+    state.combo += 1;
+  } else {
+    state.combo = 0;
+  }
 
   // 判定を大きく表示
   locked = true;
@@ -632,6 +721,7 @@ function submitAnswer(raw) {
   el.input.value = '';
   renderSteps();
   renderPreview();
+  renderCombo();
 
   const pause = autoActive() ? Math.min(JUDGE_MS, Math.max(120, autoDelay(state) * 0.6)) : JUDGE_MS;
   setTimeout(() => {
@@ -668,12 +758,21 @@ function finishRound() {
 
   state.points += gain;
   state.runEarned += gain;
+
+  // 利息（使わずに貯めておくほど増える）
+  const interest = state.interestLevel ? Math.floor(state.points * interestRate(state)) : 0;
+  if (interest > 0) {
+    state.points += interest;
+    state.runEarned += interest;
+  }
   state.stats.rounds += 1;
   state.stats.earned += gain;
   if (isBest) state.stats.best = gain;
   save();
 
-  renderResult({ sum, base, bonus, perfectAdd, mult, gain, before, isBest, tower, justReached });
+  renderResult({ sum, base, bonus, perfectAdd, mult, gain, before, isBest, tower, justReached,
+                 interest, combo: comboCount(state), comboMult: comboMult(state),
+                 allInMult: allInMult(state), boosted: boostedBase(sum, state) });
   renderAll();
   showScreen('result');   // 計算が終わったら結果画面へ
 }
@@ -835,6 +934,15 @@ function applyEdit() {
     vals[1] = Math.round(k);
   }
 
+  // 上限を超える書きかえはできない
+  const limit = manualLimit(state);
+  if (vals.some(v => V.log10(v) > limit)) {
+    el.exprEditMsg.innerHTML =
+      `いまは ${magnitudeHtml(Math.floor(limit), state, 1)} までです` +
+      `（桁数アップ・指数スケールを進めると上がります）`;
+    return;
+  }
+
   const before = p.terms;
   p.terms = vals;
   const answer = evalProblem(p);
@@ -899,9 +1007,9 @@ function renderEditMode() {
 }
 
 // 「この大きさ」を表す見本の数（整数のうちはふつうの数字で見せる）
-function magnitudeHtml(L, s) {
-  if (s.sciMode || L >= 15) return V.html(V.sci(3, L));   // 15桁を超えたら指数表記
-  return V.html(Math.round(3 * Math.pow(10, L)));
+function magnitudeHtml(L, s, m = 3) {
+  if (s.sciMode || L >= 15) return V.html(V.sci(m, L));   // 15桁を超えたら指数表記
+  return V.html(Math.round(m * Math.pow(10, L)));
 }
 
 /* ---------------------------------------------------------------
@@ -996,6 +1104,10 @@ const el = {
   upgradeList:  document.getElementById('upgrade-list'),
   ops:          document.getElementById('ops'),
   stats:        document.getElementById('stats'),
+  combo:        document.getElementById('combo'),
+  allInRow:     document.getElementById('allin-row'),
+  allInValue:   document.getElementById('allin-value'),
+  allInInfo:    document.getElementById('allin-info'),
   autoRow:      document.getElementById('auto-row'),
   autoToggle:   document.getElementById('auto-toggle'),
   autoInfo:     document.getElementById('auto-info'),
@@ -1049,6 +1161,7 @@ function renderProblem() {
   renderSteps();
   renderKeypad();
   renderPreview();
+  renderCombo();
   editing = false;
   renderEditMode();
 }
@@ -1118,15 +1231,20 @@ function renderResult(r) {
         : `${b} を <b>${r.base}</b> 回かけても届く大きさ → ⌊log<sub>${b}</sub>(${fmt(r.sum)})⌋ = <b>${r.base}</b>`;
 
   // --- 内訳 ---
-  const parts = [fmt(r.base), r.bonus];
+  const parts = [fmt(state.expRewardLevel ? Math.floor(r.boosted) : r.base), r.bonus];
   el.breakdown.innerHTML =
     row(`⌊log<sub>${b}</sub>(合計)⌋`, fmt(r.base)) +
+    (state.expRewardLevel
+      ? row(`基礎値の ${expRewardPow(state).toFixed(2)} 乗`, fmt(Math.floor(r.boosted))) : '') +
     row('演算ボーナス', `+${r.bonus}`) +
     (state.perfectLevel
       ? row('パーフェクトボーナス', r.perfectAdd ? `+${r.perfectAdd}` : '—（全問正解で +' + state.perfectLevel + '）')
       : '') +
-    row('倍率', `×${r.mult.toFixed(1)}`) +
-    `<div class="row total"><span>( ${parts.concat(r.perfectAdd ? [r.perfectAdd] : []).join(' + ')} ) × ${r.mult.toFixed(1)}</span><b>${fmt(r.gain)} T</b></div>`;
+    row('倍率', `×${r.mult.toFixed(2)}`) +
+    (state.comboLevel ? row(`連続正解 ${fmt(r.combo)} 連鎖`, `×${r.comboMult.toFixed(2)}`) : '') +
+    (state.allInCut ? row(`一発勝負 −${state.allInCut} 問`, `×${r.allInMult.toFixed(2)}`) : '') +
+    `<div class="row total"><span>( ${parts.concat(r.perfectAdd ? [r.perfectAdd] : []).join(' + ')} ) × ${(r.mult * r.comboMult * r.allInMult).toFixed(2)}</span><b>${fmt(r.gain)} T</b></div>` +
+    (r.interest > 0 ? row('利息', `+${fmt(r.interest)} T`) : '');
 
   // --- 獲得（0 から数え上げ） ---
   countUp(el.gain, r.gain);
@@ -1298,6 +1416,11 @@ function renderStats() {
     ['所持Σ / 累計Σ', `${fmt(state.sigma)} / ${fmt(state.sigmaTotal)}`],
     ['Σによる報酬ボーナス', `+${(sigmaBonus(state) * 100).toFixed(0)}%`],
     ['基礎値の底上げ', state.perm.baseBoost ? `+${state.perm.baseBoost}` : 'なし'],
+    ['連続正解', state.comboLevel
+      ? `${fmt(state.combo)} 連鎖（報酬 ×${comboMult(state).toFixed(2)}）` : 'なし'],
+    ['一発勝負', state.allInCut ? `−${state.allInCut} 問（報酬 ×${allInMult(state).toFixed(2)}）` : 'なし'],
+    ['利息', state.interestLevel ? `ラウンドごとに +${(interestRate(state) * 100).toFixed(0)}%` : 'なし'],
+    ['指数的報酬', state.expRewardLevel ? `基礎値の ${expRewardPow(state).toFixed(2)} 乗` : 'なし'],
     ['オート計算', state.auto
       ? (state.autoOn ? `入（${(autoDelay(state) / 1000).toFixed(1)} 秒に1問）` : '切')
       : 'なし'],
@@ -1318,6 +1441,8 @@ function renderAll() {
   renderUpgrades();
   renderOps();
   renderAuto();
+  renderAllIn();
+  renderCombo();
   renderPrestige();
   renderStats();
 }
@@ -1359,6 +1484,8 @@ function load() {
  * ------------------------------------------------------------- */
 document.getElementById('btn-start').addEventListener('click', startRound);
 document.getElementById('btn-to-upgrade').addEventListener('click', () => showScreen('upgrade'));
+document.getElementById('allin-minus').addEventListener('click', () => changeAllIn(-1));
+document.getElementById('allin-plus').addEventListener('click', () => changeAllIn(1));
 el.autoToggle.addEventListener('change', () => {
   state.autoOn = el.autoToggle.checked;
   save();
@@ -1422,6 +1549,30 @@ el.keypad.addEventListener('click', ev => {
   if (!btn) return;
   pressKey(btn.dataset.key);
 });
+
+function renderCombo() {
+  const on = state.comboLevel > 0;
+  el.combo.classList.toggle('hidden', !on);
+  if (!on) return;
+  el.combo.textContent = `${fmt(state.combo)} 連鎖 ×${comboMult(state).toFixed(2)}` +
+    (state.combo >= comboCap(state) ? ' 上限' : '');
+}
+
+function renderAllIn() {
+  el.allInRow.classList.toggle('hidden', !state.allIn);
+  if (!state.allIn) return;
+  el.allInValue.textContent = `${state.allInCut} 問減らす`;
+  el.allInInfo.innerHTML =
+    `1ラウンド <b>${roundSize(state)}</b> 問　／　報酬 ×${allInMult(state).toFixed(2)}`;
+}
+
+function changeAllIn(d) {
+  const next = state.allInCut + d;
+  if (next < 0 || state.problems - next < 1) return;
+  state.allInCut = next;
+  save();
+  renderAll();
+}
 
 // 案内文の出し分け（「.」「E」キーはいつでも使える）
 function renderKeypad() {

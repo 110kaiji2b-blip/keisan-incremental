@@ -233,6 +233,7 @@ body {
 }
 .key {
   font: inherit;
+  touch-action: manipulation;   /* 二度押しで拡大されないように */
   font-size: 22px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;

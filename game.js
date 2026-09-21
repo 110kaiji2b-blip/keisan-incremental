@@ -1400,9 +1400,22 @@ el.input.addEventListener('keydown', ev => {
 });
 
 /* ---------------------------------------------------------------
- * テンキー（マウス入力）
+ * テンキー（マウス・指での入力）
  * ------------------------------------------------------------- */
 const MAX_INPUT_LEN = 15;
+
+// スマホ・タブレットでは、画面内のテンキーを使うので
+// OS のソフトキーボードがせり上がってこないようにする。
+// （物理キーボードからの入力はそのまま使える）
+const TOUCH_DEVICE = window.matchMedia
+  ? window.matchMedia('(pointer: coarse)').matches
+  : 'ontouchstart' in window;
+
+if (TOUCH_DEVICE) {
+  el.input.setAttribute('inputmode', 'none');
+  const hint = document.getElementById('play-hint');
+  if (hint) hint.textContent = '画面のテンキーで入力します';
+}
 
 // ボタンを押しても入力欄のフォーカスを外さない（キーボード併用のため）
 el.keypad.addEventListener('mousedown', ev => ev.preventDefault());

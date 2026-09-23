@@ -750,11 +750,10 @@ function makeIntProblem(s, op) {
     terms = Array.from({ length: n }, () => randNumber(d));
     answer = terms.reduce((a, b) => a + b, 0);
   } else if (op === 'mul') {
-    // 項数は必ず守る。積が安全な整数（約15桁）に収まるよう、1項あたりの桁を調整する
-    const m = s.mulTerms;
-    const dd = Math.max(1, Math.min(d, Math.floor(15 / m)));
-    terms = Array.from({ length: m }, () => randNumber(dd));
-    answer = terms.reduce((a, b) => a * b, 1);
+    // 項数も1項の桁数も必ず守る。積が安全な整数（約15桁）を超えたら答えは指数表記になり、
+    // 上から7桁が合っていれば正解になる（V.eq の許容誤差）
+    terms = Array.from({ length: s.mulTerms }, () => randNumber(d));
+    answer = terms.reduce((a, b) => V.mul(a, b));
   } else if (op === 'div') {
     answer = randNumber(d);
     const r = safeProduct([answer, ...Array.from({ length: n - 1 }, () => randNumber(d))]);
@@ -1940,8 +1939,11 @@ function renderKeypad() {
   const base = TOUCH_DEVICE
     ? '画面のテンキーで入力します'
     : 'マウスでもキーボードでも入力できます（Enter キーで決定）';
+  const p = round && round.problems[round.index];
+  const bigInt = !useSci(state) && p && V.isSci(p.answer);
   el.playHint.textContent = base +
-    (useSci(state) ? '　／　E は ×10ⁿ（3E50 = 3×10⁵⁰）' : '');
+    (useSci(state) ? '　／　E は ×10ⁿ（3E50 = 3×10⁵⁰）' : '') +
+    (bigInt ? '　／　答えが大きいので、上から7桁が合っていれば正解' : '');
 }
 
 // いま入力している文字列がどんな数なのかを下に出す

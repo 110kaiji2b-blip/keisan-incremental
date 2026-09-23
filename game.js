@@ -30,8 +30,9 @@ function newState() {
     points: 0,
     runEarned: 0,    // この周回で獲得した T の合計（転生時の Σ 計算に使う）
     digits: 1,     // 出題される数字の桁数
-    terms: 2,      // たし算1問あたりの数字の個数
-    mulTerms: 2,   // かけ算1問あたりの数字の個数
+    terms: 2,      // たし算1問あたりの数字の個数（ひき算・わり算は常に2個）
+    mulTerms: 2,   // かけ算の1問あたりの数字の個数
+    powLevel: 0,   // べき乗の指数アップ（a^b の b を大きくする）
     problems: 3,   // 1ラウンドの出題数
     multLevel: 0,    // 報酬倍率レベル
     logBase: 10,     // 報酬に使う対数の底（下げるほど報酬が伸びる）
@@ -63,9 +64,17 @@ function newState() {
       keep: 0,          // 転生しても失わないものの段階
       startDigits: 0,   // 開始時の桁数
       startProblems: 0, // 開始時の出題数
+      sigmaExp: 0,      // Σの累乗：基礎値の累乗が増える
+      skip: 0,          // 飛び級：指数表記・指数スケールを持って始める
+      expMul: 0,        // 指数ブースト：出題される数字の指数を何倍にするか
+      powExp: 0,        // べき乗の指数：a^b の b を大きくする
+      expEff: 0,        // 指数的報酬の効率
+      expDiscount: 0,   // 指数まわりのアップグレードの値引き
     },
     stats: { rounds: 0, earned: 0, correct: 0, answered: 0, best: 0, prestiges: 0,
-             bestTower: -Infinity, goal: false },
+             bestTower: -Infinity, goal: false,
+             perfects: 0, bestStreak: 0, bought: 0 },
+    ach: {},         // 達成した実績（転生・振り直しでも消えない）
   };
 }
 
@@ -78,7 +87,7 @@ let state = newState();
 const GOAL_TOWER = 100;           // log10(log10(合計)) がこの値を超えたら達成
 
 const SIGMA_DIV = 100;            // Σ の計算に使う基準
-const SIGMA_RATES = [0.10, 0.25, 0.50, 1.00];
+const SIGMA_RATES = [0.25, 0.50, 1.00, 2.00, 4.00, 8.00];
 
 // 獲得Tが10倍になるごとに +4Σ（桁が爆発しても破綻しないように log で数える）
 const SIGMA_PER_DECADE = 4;
@@ -125,7 +134,8 @@ function contribution(p, s) {
   return rate ? V.scale(p.answer, rate) : 0;
 }
 
-function permBoost(s) { return REWARD_SCALE * ((s.perm && s.perm.baseBoost) || 0); }
+const BASE_BOOST_STEP = 5 * REWARD_SCALE;   // 1レベル = 合計が 5 桁ぶん大きいのと同じ
+function permBoost(s) { return BASE_BOOST_STEP * ((s.perm && s.perm.baseBoost) || 0); }
 
 /* ---- 4つの「伸ばし方」---- */
 
@@ -142,10 +152,23 @@ function allInMult(s) { return 1 + 0.3 * (s.allInCut || 0); }
 function interestRate(s) { return 0.02 * (s.interestLevel || 0); }
 
 // ④ 指数的報酬：基礎値そのものを累乗する（桁が大きいほど効く）
-function expRewardPow(s) { return 1 + 0.05 * (s.expRewardLevel || 0); }
+function expRewardPow(s) {
+  return 1 + expRewardStep(s) * (s.expRewardLevel || 0) + 0.1 * ((s.perm && s.perm.sigmaExp) || 0);
+}
+// 「指数的報酬」1レベルで増える累乗（永続強化「指数的報酬の効率」で伸びる）
+function expRewardStep(s) { return 0.05 * (1 + 0.5 * ((s.perm && s.perm.expEff) || 0)); }
+// 出題される数字の指数にかかる倍率（永続強化「指数ブースト」）
+function expMul(s) { return 1 + ((s.perm && s.perm.expMul) || 0); }
+// 指数まわりのアップグレードの値引き（永続強化「指数の値引き」）
+function discounted(cost, factor, lv) {
+  if (!lv) return cost;
+  const c = V.div(cost, V.pow(factor, lv));
+  return V.cmp(c, 1) < 0 ? 1 : (V.isSci(c) ? c : Math.max(1, Math.round(c)));
+}
+function hasPowBoost(s) { return expRewardPow(s) > 1; }
 function boostedBase(sum, s) {
   const b = baseFromSum(sum, s);
-  if (!s.expRewardLevel || b <= 1) return b;
+  if (!hasPowBoost(s) || b <= 1) return b;
   return V.pow(b, expRewardPow(s));   // 1e308 を超えても V が受け止める
 }
 
@@ -239,13 +262,13 @@ const UPGRADES = [
   {
     id: 'mulTerms',
     name: 'かけ算の項数アップ',
-    max: 5,
+    max: 6,
+    requires: s => s.unlocked.mul,
+    lockedNote: '「かけ算 解放」を買うと購入できる',
     level: s => s.mulTerms,
-    cost:  s => Math.round(30 * Math.pow(5, s.mulTerms - 2)),
-    now:   s => (s.unlocked.mul
-      ? `かけ算の1問に数字が ${s.mulTerms} 個`
-      : `かけ算の1問に数字が ${s.mulTerms} 個（「かけ算 解放」を買うと効きはじめる）`),
-    next:  s => `かけ算の1問に数字が ${s.mulTerms + 1} 個（答えの桁が一気に伸びる）`,
+    cost:  s => Math.round(30 * Math.pow(4, s.mulTerms - 2)),
+    now:   s => `かけ算は1問に数字が ${s.mulTerms} 個`,
+    next:  s => `かけ算は1問に数字が ${s.mulTerms + 1} 個（答えの桁がさらに伸びる）`,
     apply: s => { s.mulTerms += 1; },
   },
   {
@@ -291,6 +314,18 @@ const UPGRADES = [
     now:   s => (s.unlocked.pow ? 'べき乗が使える' : 'べき乗は出題されない'),
     next:  () => 'a^b が出題に加わる（答えの桁が一気に伸びる・演算ボーナス +1）',
     apply: s => { s.unlocked.pow = true; s.enabled.pow = true; },
+  },
+  {
+    id: 'powK',
+    name: 'べき乗の指数アップ',
+    max: Infinity,                       // 上限なし
+    requires: s => s.unlocked.pow,
+    lockedNote: '「べき乗 解放」を買うと購入できる',
+    level: s => s.powLevel,
+    cost:  s => powKCost(s.powLevel),
+    now:   s => `a^b の b が ${powRange(s).join('〜')}`,
+    next:  s => `b が ${powRange({ powLevel: s.powLevel + 1 }).join('〜')} になる（指数表記のときも +${s.powLevel + 1}）`,
+    apply: s => { s.powLevel += 1; },
   },
   {
     id: 'logbase',
@@ -341,11 +376,11 @@ const UPGRADES = [
     name: '指数的報酬',
     max: Infinity,                       // 上限なし
     level: s => s.expRewardLevel,
-    cost:  s => V.mul(800, V.pow(5, s.expRewardLevel)),
-    now:   s => (s.expRewardLevel
+    cost:  s => discounted(V.mul(800, V.pow(5, s.expRewardLevel)), 5, s.perm.expDiscount),
+    now:   s => (hasPowBoost(s)
       ? `報酬の基礎値が ${expRewardPow(s).toFixed(2)} 乗される（上限なし）`
       : '報酬の基礎値はそのまま'),
-    next:  s => `基礎値が ${(1 + 0.05 * (s.expRewardLevel + 1)).toFixed(2)} 乗される（桁が大きいほど効く）`,
+    next:  s => `基礎値が ${(expRewardPow(s) + expRewardStep(s)).toFixed(3).replace(/0$/, '')} 乗される（桁が大きいほど効く）`,
     apply: s => { s.expRewardLevel += 1; },
   },
   {
@@ -393,7 +428,7 @@ const UPGRADES = [
     name: '指数スケール',
     max: 16,
     level: s => s.expLevel,
-    cost:  s => Math.round(8000 * Math.pow(10, expOrder(s))),
+    cost:  s => discounted(Math.round(8000 * Math.pow(10, expOrder(s))), 1000, s.perm.expDiscount),
     now:   s => (s.manualLog !== null
       ? `10^(n × 10^${expOrder(s)}) 規模（いまは「数字の直接指定」が優先されています）`
       : s.sciMode
@@ -409,15 +444,18 @@ const KEEP_STEPS = [
   'オート計算ひとそろい（速度・周回も）',
   '対数の底',
   '報酬倍率のレベル',
+  '桁数・項数・かけ算の項数・出題数',
+  '指数表記・指数スケール・指数的報酬',
+  'ほかのアップグレード全部（部分点・パーフェクト・連続正解・利息・一発勝負・直接指定）',
 ];
 
 const PERKS = [
   {
     id: 'keep',
     name: '引き継ぎ',
-    max: 4,
+    max: KEEP_STEPS.length,
     level: s => s.perm.keep,
-    cost:  s => [2, 8, 24, 60][s.perm.keep],
+    cost:  s => [1, 3, 8, 20, 40, 80, 160][s.perm.keep],
     now:   s => (s.perm.keep
       ? `転生しても残る: ${KEEP_STEPS.slice(0, s.perm.keep).join(' / ')}`
       : '転生すると強化はすべて失われる'),
@@ -427,36 +465,36 @@ const PERKS = [
   {
     id: 'startCash',
     name: '持ち込み資金',
-    max: 10,
+    max: 20,
     level: s => s.perm.startCash,
-    cost:  s => Math.round(3 * Math.pow(3, s.perm.startCash)),
+    cost:  s => Math.round(2 * Math.pow(2, s.perm.startCash)),
     now:   s => (s.perm.startCash
-      ? `転生した直後に ${fmt(Math.pow(10, s.perm.startCash))} T を持って始める`
+      ? `転生した直後に ${fmt(startCashOf(s.perm.startCash))} T を持って始める`
       : '転生したら 0 T から'),
-    next:  s => `転生した直後に ${fmt(Math.pow(10, s.perm.startCash + 1))} T を持って始める`,
+    next:  s => `転生した直後に ${fmt(startCashOf(s.perm.startCash + 1))} T を持って始める（いま買うとすぐ受け取れる）`,
     apply: s => {
       s.perm.startCash += 1;
-      s.points += Math.pow(10, s.perm.startCash);   // 買った分は今すぐ受け取れる
+      s.points = V.add(s.points, startCashOf(s.perm.startCash));   // 買った分は今すぐ受け取れる
     },
   },
   {
     id: 'baseBoost',
     name: '基礎値の底上げ',
-    max: 10,
+    max: 20,
     level: s => s.perm.baseBoost,
-    cost:  s => Math.round(4 * Math.pow(2, s.perm.baseBoost)),
+    cost:  s => Math.round(2 * Math.pow(1.6, s.perm.baseBoost)),
     now:   s => (s.perm.baseBoost
-      ? `報酬の基礎値に +${s.perm.baseBoost}（合計が小さくても稼げる）`
+      ? `報酬の基礎値に +${permBoost(s)}（合計が ${5 * s.perm.baseBoost} 桁ぶん大きいのと同じ）`
       : '報酬は ⌊log(合計)⌋ のぶんだけ'),
-    next:  s => `報酬の基礎値に +${s.perm.baseBoost + 1}`,
+    next:  s => `報酬の基礎値に +${BASE_BOOST_STEP * (s.perm.baseBoost + 1)}`,
     apply: s => { s.perm.baseBoost += 1; },
   },
   {
     id: 'power',
     name: 'Σの力',
-    max: 3,
+    max: SIGMA_RATES.length - 1,
     level: s => s.perm.sigmaPower,
-    cost:  s => [3, 10, 30][s.perm.sigmaPower],
+    cost:  s => [2, 6, 15, 40, 100][s.perm.sigmaPower],
     now:   s => `Σ 1つにつき 報酬 +${(sigmaRate(s) * 100).toFixed(0)}%（いま ×${multiplier(s).toFixed(2)}）`,
     next:  s => `Σ 1つにつき 報酬 +${(SIGMA_RATES[s.perm.sigmaPower + 1] * 100).toFixed(0)}%`,
     apply: s => { s.perm.sigmaPower += 1; },
@@ -466,7 +504,7 @@ const PERKS = [
     name: '英才教育',
     max: 7,
     level: s => s.perm.startDigits,
-    cost:  s => [2, 5, 12, 30, 70, 160, 360][s.perm.startDigits],
+    cost:  s => [1, 2, 4, 8, 15, 30, 60][s.perm.startDigits],
     now:   s => `開始時の桁数 ${1 + s.perm.startDigits} 桁`,
     next:  s => `開始時の桁数 ${2 + s.perm.startDigits} 桁`,
     apply: s => { s.perm.startDigits += 1; },
@@ -476,17 +514,100 @@ const PERKS = [
     name: '予習',
     max: 5,
     level: s => s.perm.startProblems,
-    cost:  s => [4, 10, 25, 60, 140][s.perm.startProblems],
+    cost:  s => [1, 3, 6, 12, 25][s.perm.startProblems],
     now:   s => `開始時の出題数 ${3 + s.perm.startProblems} 問`,
     next:  s => `開始時の出題数 ${4 + s.perm.startProblems} 問`,
     apply: s => { s.perm.startProblems += 1; },
   },
+  {
+    id: 'sigmaExp',
+    name: 'Σの累乗',
+    max: 20,
+    level: s => s.perm.sigmaExp,
+    cost:  s => Math.round(5 * Math.pow(1.8, s.perm.sigmaExp)),
+    now:   s => (s.perm.sigmaExp
+      ? `報酬の基礎値が さらに +${(0.1 * s.perm.sigmaExp).toFixed(1)} 乗される（いま ${expRewardPow(s).toFixed(2)} 乗）`
+      : '基礎値の累乗は「指数的報酬」だけ'),
+    next:  s => `基礎値の累乗が +0.1（「指数的報酬」2つぶん。桁が大きいほど爆発的に効く）`,
+    apply: s => { s.perm.sigmaExp += 1; },
+  },
+  {
+    id: 'skip',
+    name: '飛び級',
+    max: 6,
+    level: s => s.perm.skip,
+    cost:  s => [10, 25, 60, 140, 300, 600][s.perm.skip],
+    now:   s => (s.perm.skip
+      ? `転生直後から「指数表記」つき・指数スケール Lv.${s.perm.skip - 1} で始まる`
+      : '転生すると指数表記からやり直し'),
+    next:  s => (s.perm.skip
+      ? `開始時の指数スケールが Lv.${s.perm.skip} になる`
+      : '転生直後から「指数表記」を持って始める（買った瞬間にも効く）'),
+    apply: s => { s.perm.skip += 1; },
+  },
+  {
+    id: 'expMul',
+    name: '指数ブースト',
+    max: 10,
+    level: s => s.perm.expMul,
+    cost:  s => Math.round(8 * Math.pow(2, s.perm.expMul)),
+    now:   s => (s.perm.expMul
+      ? `指数表記の数字の指数が ×${expMul(s)}（10^n が 10^(${expMul(s)}n) になる）`
+      : '指数表記の数字の指数はそのまま'),
+    next:  s => `指数が ×${expMul(s) + 1} になる（「指数表記」を持っているときに効く）`,
+    apply: s => { s.perm.expMul += 1; },
+  },
+  {
+    id: 'powExp',
+    name: 'べき乗の指数',
+    max: 5,
+    level: s => s.perm.powExp,
+    cost:  s => [6, 15, 35, 80, 180][s.perm.powExp],
+    now:   s => {
+      const k = 3 * s.perm.powExp;
+      return `指数表記のべき乗 a^b で、b が ${2 + k}〜${5 + k}`;
+    },
+    next:  s => {
+      const k = 3 * (s.perm.powExp + 1);
+      return `b が ${2 + k}〜${5 + k} になる（答えの指数が b 倍に伸びる）`;
+    },
+    apply: s => { s.perm.powExp += 1; },
+  },
+  {
+    id: 'expEff',
+    name: '指数的報酬の効率',
+    max: 6,
+    level: s => s.perm.expEff,
+    cost:  s => Math.round(10 * Math.pow(2, s.perm.expEff)),
+    now:   s => `アップグレード「指数的報酬」1レベルで +${expRewardStep(s).toFixed(3).replace(/0$/, '')} 乗`,
+    next:  s => `1レベルで +${(0.05 * (1 + 0.5 * (s.perm.expEff + 1))).toFixed(3).replace(/0$/, '')} 乗になる（買ってあるレベルにも効く）`,
+    apply: s => { s.perm.expEff += 1; },
+  },
+  {
+    id: 'expDiscount',
+    name: '指数の値引き',
+    max: 5,
+    level: s => s.perm.expDiscount,
+    cost:  s => [5, 12, 30, 70, 160][s.perm.expDiscount],
+    now:   s => (s.perm.expDiscount
+      ? `「指数スケール」が 1/${fmt(Math.pow(1000, s.perm.expDiscount))}、「指数的報酬」が 1/${fmt(Math.pow(5, s.perm.expDiscount))} の値段`
+      : '指数まわりのアップグレードは定価'),
+    next:  s => `「指数スケール」1/${fmt(Math.pow(1000, s.perm.expDiscount + 1))}・「指数的報酬」1/${fmt(Math.pow(5, s.perm.expDiscount + 1))} の値段になる`,
+    apply: s => { s.perm.expDiscount += 1; },
+  },
 ];
+
+// 持ち込み資金 Lv.n で受け取る T（10^(3n)）
+function startCashOf(n) { return n ? V.pow(10, 3 * n) : 0; }
 
 // 永続強化を今の状態に反映する（購入時と転生直後に呼ぶ）
 function applyPerm(s) {
   s.digits = Math.max(s.digits, 1 + s.perm.startDigits);
   s.problems = Math.max(s.problems, 3 + s.perm.startProblems);
+  if (s.perm.skip) {
+    s.sciMode = true;
+    s.expLevel = Math.max(s.expLevel, s.perm.skip - 1);
+  }
 }
 
 // 下付き数字（log の底の表示用）
@@ -497,6 +618,25 @@ function sub10(n) {
 /* ---------------------------------------------------------------
  * 出題
  * ------------------------------------------------------------- */
+/* 「べき乗の指数アップ」の値段（上限なしなので、先に行くほど急に高くなる）
+ *   Lv.0〜9  ：×2.5 ずつ（375 T から）
+ *   Lv.10 から：さらに1レベルごとに上がり幅が大きくなる（×10、×12.6、×15.8 …）
+ * 効果（答えの桁）はレベルに比例して伸びるだけなので、値段の伸びがいずれ必ず追い越す。 */
+function powKCost(L) {
+  const early = 150 * Math.pow(2.5, Math.min(L, 10));
+  const over = Math.max(0, L - 10);
+  if (!over) return Math.round(early);
+  const extraLog = over + 0.05 * over * (over - 1);   // 10 の何乗ぶん上乗せするか
+  const c = V.mul(Math.round(early), V.pow(10, extraLog));
+  return V.isSci(c) ? c : Math.round(c);
+}
+
+// ふつうの数字のべき乗で出る b の範囲
+function powRange(s) {
+  const L = s.powLevel || 0;
+  return [2 + L, 3 + 2 * L];
+}
+
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
 function randNumber(digits) {
@@ -528,14 +668,14 @@ function intDigits(s) {
 }
 function randExp(s) {
   if (s.manualLog !== null) return s.manualLog;
-  return randInt(1, 9) * Math.pow(10, expOrder(s));
+  return randInt(1, 9) * Math.pow(10, expOrder(s)) * expMul(s);
 }
 function randSci(s)  { return V.sci(randInt(1, 9), randExp(s)); }
 
 // いまの出題の大きさを 10^x の x で表したもの
 function currentLog(s) {
   if (s.manualLog !== null) return s.manualLog;
-  return s.sciMode ? 5 * Math.pow(10, expOrder(s)) : s.digits;
+  return s.sciMode ? 5 * Math.pow(10, expOrder(s)) * expMul(s) : s.digits;
 }
 
 // その大きさで1ラウンド解いたときの報酬のおおよその値
@@ -565,7 +705,7 @@ const MANUAL_MAX_LOG = 1e300;   // これ以上は数として扱えない
  * アップグレードで出せる最大＋少しの余裕まで。
  * 「端数をきりよくする」ためのものなので、桁を飛び越えることはできない。 */
 function maxAutoLog(s) {
-  return s.sciMode ? 9 * Math.pow(10, expOrder(s)) : s.digits;
+  return s.sciMode ? 9 * Math.pow(10, expOrder(s)) * expMul(s) : s.digits;
 }
 function manualLimit(s) {
   const m = maxAutoLog(s);
@@ -577,13 +717,6 @@ function useSci(s) {
   return s.sciMode || (s.manualLog !== null && s.manualLog >= 15);
 }
 
-// 1問に並ぶ数字の個数。項数アップはたし算だけ、かけ算は専用のアップグレードで増える
-function termCount(s, op) {
-  if (op === 'add') return s.terms;
-  if (op === 'mul') return s.mulTerms;
-  return 2;
-}
-
 function makeProblem(s) {
   const ops = enabledOps(s);
   const op = ops.length ? ops[randInt(0, ops.length - 1)] : 'add';
@@ -592,23 +725,36 @@ function makeProblem(s) {
 
 /* ふつうの整数で出題する（序盤） */
 function makeIntProblem(s, op) {
-  const n = termCount(s, op);
+  const n = op === 'add' ? s.terms : 2;   // 項数アップはたし算だけ。ひき算・わり算は2個
   const d = intDigits(s);
   let terms, answer;
 
   if (op === 'pow') {
     // 手計算できる範囲におさえる
-    const base = randNumber(Math.min(d, 3));
-    const k = randInt(2, 3);
+    // 答えが安全な整数（約16桁）に収まるよう、b が大きいほど a を小さくする
+    const [kMin, kMax] = powRange(s);
+    const k = randInt(kMin, kMax);
+    let base;
+    if (Math.pow(2, k) > 9e15) {
+      // 2^b でも16桁を超えるほど b が大きい → 答えは指数表記（E キーで入力）
+      base = randInt(2, 9);
+    } else {
+      const cap = Math.max(2, Math.floor(Math.pow(9e15, 1 / k) + 1e-9));
+      const hiA = Math.min(Math.pow(10, Math.min(d, 3)) - 1, cap);
+      const loA = Math.min(Math.max(2, d === 1 ? 2 : Math.pow(10, Math.min(d, 3) - 1)), hiA);
+      base = randInt(loA, hiA);
+    }
     terms = [base, k];
     answer = V.pow(base, k);
   } else if (op === 'add') {
     terms = Array.from({ length: n }, () => randNumber(d));
     answer = terms.reduce((a, b) => a + b, 0);
   } else if (op === 'mul') {
-    const r = safeProduct(Array.from({ length: n }, () => randNumber(d)));
-    terms = r.used;
-    answer = r.product;
+    // 項数は必ず守る。積が安全な整数（約15桁）に収まるよう、1項あたりの桁を調整する
+    const m = s.mulTerms;
+    const dd = Math.max(1, Math.min(d, Math.floor(15 / m)));
+    terms = Array.from({ length: m }, () => randNumber(dd));
+    answer = terms.reduce((a, b) => a * b, 1);
   } else if (op === 'div') {
     answer = randNumber(d);
     const r = safeProduct([answer, ...Array.from({ length: n - 1 }, () => randNumber(d))]);
@@ -628,16 +774,16 @@ function makeIntProblem(s, op) {
  *   たし算 → 指数をそろえて仮数を足す
  * なので、数がどれだけ大きくなっても手で解ける。 */
 function makeSciProblem(s, op) {
-  const n = termCount(s, op);
+  const n = op === 'add' ? s.terms : 2;   // 項数アップはたし算だけ。ひき算・わり算は2個
   let terms, answer;
 
   if (op === 'pow') {
     const base = randSci(s);
-    const k = randInt(2, 5);
+    const k = randInt(2, 5) + 3 * ((s.perm && s.perm.powExp) || 0) + (s.powLevel || 0);
     terms = [base, k];
     answer = V.pow(base, k);
   } else if (op === 'mul') {
-    terms = Array.from({ length: n }, () => randSci(s));
+    terms = Array.from({ length: s.mulTerms }, () => randSci(s));
     answer = terms.reduce((a, b) => V.mul(a, b));
   } else if (op === 'div') {
     answer = randSci(s);
@@ -731,9 +877,11 @@ function submitAnswer(raw) {
   if (p.correct) {
     state.stats.correct += 1;
     state.combo += 1;
+    state.stats.bestStreak = Math.max(state.stats.bestStreak || 0, state.combo);
   } else {
     state.combo = 0;
   }
+  save();   // 実績の判定もここで走る
 
   // 判定を大きく表示
   locked = true;
@@ -794,6 +942,7 @@ function finishRound() {
     state.runEarned = V.add(state.runEarned, interest);
   }
   state.stats.rounds += 1;
+  if (perfect) state.stats.perfects = (state.stats.perfects || 0) + 1;
   state.stats.earned = V.add(state.stats.earned, gain);
   if (isBest) state.stats.best = gain;
   save();
@@ -806,14 +955,103 @@ function finishRound() {
 }
 
 /* ---------------------------------------------------------------
+ * 実績
+ *   test が true になった瞬間に達成。reward があれば T をもらえる。
+ *   序盤（T が 1〜10 の苦しい時期）に達成しやすいものほど報酬をつけている。
+ * ------------------------------------------------------------- */
+const ACHIEVEMENTS = [
+  { id: 'firstCorrect', name: 'はじめの一問',     desc: '1問正解する',                reward: 3,  test: s => s.stats.correct >= 1 },
+  { id: 'firstRound',   name: '1ラウンド完走',    desc: 'ラウンドを1回終える',         reward: 2,  test: s => s.stats.rounds >= 1 },
+  { id: 'firstBuy',     name: 'はじめての買い物', desc: 'アップグレードを1つ買う',     reward: 3,  test: s => (s.stats.bought || 0) >= 1 },
+  { id: 'perfect1',     name: 'パーフェクト',     desc: '1ラウンド全問正解する',       reward: 5,  test: s => (s.stats.perfects || 0) >= 1 },
+  { id: 'streak5',      name: '波に乗る',         desc: '5問連続で正解する',           reward: 4,  test: s => (s.stats.bestStreak || 0) >= 5 },
+  { id: 'correct10',    name: '10問正解',         desc: '合計10問正解する',            reward: 5,  test: s => s.stats.correct >= 10 },
+  { id: 'digits2',      name: '2桁の世界',        desc: '桁数を2桁にする',             reward: 5,  test: s => s.digits >= 2 },
+  { id: 'sub',          name: 'ひき算デビュー',   desc: 'ひき算を解放する',            reward: 8,  test: s => s.unlocked.sub },
+  { id: 'rounds10',     name: '10ラウンド',       desc: 'ラウンドを10回終える',        reward: 10, test: s => s.stats.rounds >= 10 },
+  { id: 'streak15',     name: '集中モード',       desc: '15問連続で正解する',          reward: 10, test: s => (s.stats.bestStreak || 0) >= 15 },
+  { id: 'mul',          name: 'かけ算デビュー',   desc: 'かけ算を解放する',            reward: 15, test: s => s.unlocked.mul },
+  { id: 'perfect10',    name: 'パーフェクト×10',  desc: '全問正解のラウンドを10回',    reward: 20, test: s => (s.stats.perfects || 0) >= 10 },
+  { id: 'correct100',   name: '100問正解',        desc: '合計100問正解する',           reward: 25, test: s => s.stats.correct >= 100 },
+  { id: 'points100',    name: '小金持ち',         desc: '所持Tポイントが100を超える',  test: s => V.cmp(s.points, 100) >= 0 },
+  { id: 'digits5',      name: '5桁の世界',        desc: '桁数を5桁にする',             test: s => s.digits >= 5 },
+  { id: 'div',          name: 'わり算デビュー',   desc: 'わり算を解放する',            test: s => s.unlocked.div },
+  { id: 'pow',          name: 'べき乗デビュー',   desc: 'べき乗を解放する',            test: s => s.unlocked.pow },
+  { id: 'auto',         name: '自動化',           desc: 'オート計算を買う',            test: s => s.auto },
+  { id: 'best1000',     name: '大漁',             desc: '1ラウンドで1,000T稼ぐ',       test: s => V.cmp(s.stats.best, 1000) >= 0 },
+  { id: 'prestige1',    name: '生まれ変わり',     desc: 'はじめて転生する',            test: s => s.stats.prestiges >= 1 },
+  { id: 'sci',          name: '指数の入口',       desc: '指数表記を手に入れる',        test: s => s.sciMode },
+  { id: 'rounds100',    name: '100ラウンド',      desc: 'ラウンドを100回終える',       test: s => s.stats.rounds >= 100 },
+  { id: 'googol',       name: 'グーゴル',         desc: '1ラウンドの合計が 10^100 を超える',       test: s => s.stats.bestTower >= 2 },
+  { id: 'prestige10',   name: '輪廻',             desc: '10回転生する',                test: s => s.stats.prestiges >= 10 },
+  { id: 'correct1000',  name: '1000問正解',       desc: '合計1,000問正解する',         test: s => s.stats.correct >= 1000 },
+  { id: 'tower10',      name: '塔の上',           desc: '1ラウンドの合計が 10^10^10 を超える',     test: s => s.stats.bestTower >= 10 },
+  { id: 'goal',         name: '到達',             desc: '最終目標 10^10^100 を達成する', test: s => s.stats.goal },
+];
+
+// 条件を満たした実績を達成済みにして、報酬を渡す（save() のたびに呼ばれる）
+function checkAchievements() {
+  if (!state.ach) state.ach = {};
+  const got = [];
+  ACHIEVEMENTS.forEach(a => {
+    if (state.ach[a.id]) return;
+    let ok = false;
+    try { ok = a.test(state); } catch (e) { ok = false; }
+    if (!ok) return;
+    state.ach[a.id] = true;
+    if (a.reward) state.points = V.add(state.points, a.reward);
+    got.push(a);
+  });
+  if (!got.length) return;
+  if (typeof el !== 'undefined') {
+    el.points.textContent = fmt(state.points);
+    got.forEach(a => showToast(a));
+    renderAchievements();
+  }
+}
+
+function showToast(a) {
+  const box = document.getElementById('toasts');
+  if (!box) return;
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<span class="toast-icon">🏆</span>
+    <span class="toast-body"><b>実績達成：${a.name}</b><small>${a.desc}</small></span>` +
+    (a.reward ? `<span class="toast-reward">+${a.reward} T</span>` : '');
+  box.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.remove(), 400);
+  }, 3200);
+}
+
+function renderAchievements() {
+  const list = document.getElementById('ach-list');
+  if (!list) return;
+  const done = ACHIEVEMENTS.filter(a => state.ach && state.ach[a.id]).length;
+  document.getElementById('ach-count').textContent = `${done} / ${ACHIEVEMENTS.length}`;
+  list.innerHTML = ACHIEVEMENTS.map(a => {
+    const ok = state.ach && state.ach[a.id];
+    return `<div class="ach${ok ? ' done' : ''}">
+      <span class="ach-mark">${ok ? '🏆' : '・'}</span>
+      <span class="ach-text"><b>${a.name}</b><small>${a.desc}</small></span>
+      ${a.reward ? `<span class="ach-reward">+${a.reward} T</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* ---------------------------------------------------------------
  * 購入
  * ------------------------------------------------------------- */
 function buy(upg) {
   if (upg.level(state) >= upg.max) return;
+  if (upg.requires && !upg.requires(state)) return;
   const cost = costOf(upg, state);
   if (V.cmp(state.points, cost) < 0) return;
   state.points = V.sub(state.points, cost);
   upg.apply(state);
+  state.stats.bought = (state.stats.bought || 0) + 1;
   save();
   renderAll();
 }
@@ -876,7 +1114,10 @@ function autoLoop() {
 
 function renderAuto() {
   el.autoRow.classList.toggle('hidden', !state.auto);
+  el.autoStop.classList.toggle('hidden', !state.auto);
   if (!state.auto) { clearTimeout(autoTimer); return; }
+  el.autoStop.textContent = state.autoOn ? '⏸ オート停止' : '▶ オート再開';
+  el.autoStop.classList.toggle('off', !state.autoOn);
   el.autoToggle.checked = state.autoOn;
   el.autoInfo.innerHTML = state.autoOn
     ? `${(autoDelay(state) / 1000).toFixed(1)} 秒に1問` +
@@ -1053,6 +1294,7 @@ function doPrestige() {
     sigmaTotal: state.sigmaTotal + gain,
     perm,
     stats: state.stats,
+    ach: state.ach,
   };
 
   // 「引き継ぎ」で残るもの
@@ -1068,9 +1310,19 @@ function doPrestige() {
   }
   if (perm.keep >= 3) carried.logBase = state.logBase;
   if (perm.keep >= 4) carried.multLevel = state.multLevel;
+  if (perm.keep >= 5) {
+    ['digits', 'terms', 'mulTerms', 'problems'].forEach(k => { carried[k] = state[k]; });
+  }
+  if (perm.keep >= 6) {
+    ['sciMode', 'expLevel', 'expRewardLevel'].forEach(k => { carried[k] = state[k]; });
+  }
+  if (perm.keep >= 7) {
+    ['manual', 'partialLevel', 'perfectLevel', 'comboLevel', 'interestLevel', 'allIn']
+      .forEach(k => { carried[k] = state[k]; });
+  }
 
   state = Object.assign(newState(), carried);
-  state.points = perm.startCash ? Math.pow(10, perm.startCash) : 0;   // 持ち込み資金
+  state.points = startCashOf(perm.startCash);   // 持ち込み資金
   state.stats.prestiges += 1;
   applyPerm(state);
   save();
@@ -1110,6 +1362,7 @@ function doRespec() {
     sigmaTotal: state.sigmaTotal,
     perm: state.perm,
     stats: state.stats,
+    ach: state.ach,
   };
   state = Object.assign(newState(), keep);
   applyPerm(state);
@@ -1178,6 +1431,7 @@ const el = {
   allInInfo:    document.getElementById('allin-info'),
   autoRow:      document.getElementById('auto-row'),
   autoToggle:   document.getElementById('auto-toggle'),
+  autoStop:     document.getElementById('btn-auto-stop'),
   autoInfo:     document.getElementById('auto-info'),
   exprEdit:     document.getElementById('expr-edit'),
   exprTools:    document.getElementById('expr-tools'),
@@ -1301,10 +1555,10 @@ function renderResult(r) {
       : `log<sub>${b}</sub>(${fmt(r.sum)}) = ${logv.toFixed(2)} → ×${REWARD_SCALE} して 基礎値 <b>${fmt(r.base)}</b>`;
 
   // --- 内訳 ---
-  const parts = [fmt(state.expRewardLevel ? r.boosted : r.base), r.bonus];
+  const parts = [fmt(hasPowBoost(state) ? r.boosted : r.base), r.bonus];
   el.breakdown.innerHTML =
     row(`⌊log<sub>${b}</sub>(合計) × ${REWARD_SCALE}⌋`, fmt(r.base)) +
-    (state.expRewardLevel
+    (hasPowBoost(state)
       ? row(`基礎値の ${expRewardPow(state).toFixed(2)} 乗`, fmt(r.boosted)) : '') +
     row('演算ボーナス', `+${r.bonus}`) +
     (state.perfectLevel
@@ -1386,7 +1640,8 @@ function renderCards(container, defs, wallet, unit, onBuy, priceOf) {
     const lv = def.level(state);
     const maxed = lv >= def.max;
     const cost = maxed ? null : priceOf(def, state);
-    const affordable = !maxed && V.cmp(wallet, cost) >= 0;
+    const locked = !maxed && def.requires && !def.requires(state);
+    const affordable = !maxed && !locked && V.cmp(wallet, cost) >= 0;
 
     const div = document.createElement('div');
     div.className = 'upg' + (maxed ? ' maxed' : affordable ? ' affordable' : '');
@@ -1403,7 +1658,7 @@ function renderCards(container, defs, wallet, unit, onBuy, priceOf) {
     if (!maxed) {
       const btn = document.createElement('button');
       btn.className = 'btn upg-buy' + (affordable ? ' primary' : '');
-      btn.textContent = `${fmt(cost)} ${unit} で購入`;
+      btn.textContent = locked ? def.lockedNote : `${fmt(cost)} ${unit} で購入`;
       btn.disabled = !affordable;
       btn.addEventListener('click', () => onBuy(def));
       div.appendChild(btn);
@@ -1490,10 +1745,11 @@ function renderStats() {
     ['正答率', `${acc}%  (${state.stats.correct} / ${state.stats.answered})`],
     ['1ラウンドの出題', `${state.problems} 問`],
     ['いまの式', state.manualLog !== null
-      ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × たし算${state.terms}個・かけ算${state.mulTerms}個（手動）`
+      ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × ${state.terms}個（たし算・手動）`
       : state.sciMode
-        ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × たし算${state.terms}個・かけ算${state.mulTerms}個`
-        : `${state.digits}桁の数字 × たし算${state.terms}個・かけ算${state.mulTerms}個`],
+        ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × ${state.terms}個（たし算）`
+        : `${state.digits}桁の数字 × ${state.terms}個（たし算）`],
+    ...(state.unlocked.mul ? [['かけ算の項数', `${state.mulTerms}個`]] : []),
     ['演算ボーナス', `+${varietyBonus(state)}`],
     ['報酬の基礎値', `⌊log${sub10(state.logBase)}(合計) × ${REWARD_SCALE}⌋`],
     ['パーフェクトボーナス', state.perfectLevel ? `+${state.perfectLevel}` : 'なし'],
@@ -1501,12 +1757,12 @@ function renderStats() {
     ['報酬倍率', `×${multiplier(state).toFixed(2)}`],
     ['所持Σ / 累計Σ', `${fmt(state.sigma)} / ${fmt(state.sigmaTotal)}`],
     ['Σによる報酬ボーナス', `+${(sigmaBonus(state) * 100).toFixed(0)}%`],
-    ['基礎値の底上げ', state.perm.baseBoost ? `+${state.perm.baseBoost}` : 'なし'],
+    ['基礎値の底上げ', state.perm.baseBoost ? `+${permBoost(state)}` : 'なし'],
     ['連続正解', state.comboLevel
       ? `${fmt(state.combo)} 連鎖（報酬 ×${comboMult(state).toFixed(2)}）` : 'なし'],
     ['一発勝負', state.allInCut ? `−${state.allInCut} 問（報酬 ×${allInMult(state).toFixed(2)}）` : 'なし'],
     ['利息', state.interestLevel ? `ラウンドごとに +${(interestRate(state) * 100).toFixed(0)}%` : 'なし'],
-    ['指数的報酬', state.expRewardLevel ? `基礎値の ${expRewardPow(state).toFixed(2)} 乗` : 'なし'],
+    ['指数的報酬', hasPowBoost(state) ? `基礎値の ${expRewardPow(state).toFixed(2)} 乗` : 'なし'],
     ['オート計算', state.auto
       ? (state.autoOn ? `入（${(autoDelay(state) / 1000).toFixed(1)} 秒に1問）` : '切')
       : 'なし'],
@@ -1532,12 +1788,14 @@ function renderAll() {
   renderRespec();
   renderPrestige();
   renderStats();
+  renderAchievements();
 }
 
 /* ---------------------------------------------------------------
  * セーブ / ロード
  * ------------------------------------------------------------- */
 function save() {
+  checkAchievements();
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -1556,8 +1814,11 @@ function load() {
     state.stats    = Object.assign({ rounds: 0, earned: 0, correct: 0, answered: 0, best: 0,
                                      prestiges: 0, bestTower: -Infinity, goal: false }, data.stats);
     if (state.stats.bestTower === null) state.stats.bestTower = -Infinity;
+    state.stats = Object.assign({ perfects: 0, bestStreak: 0, bought: 0 }, state.stats);
+    state.ach = Object.assign({}, data.ach);
     state.perm     = Object.assign(
-      { sigmaPower: 0, baseBoost: 0, startCash: 0, keep: 0, startDigits: 0, startProblems: 0 },
+      { sigmaPower: 0, baseBoost: 0, startCash: 0, keep: 0, startDigits: 0, startProblems: 0,
+        sigmaExp: 0, skip: 0, expMul: 0, powExp: 0, expEff: 0, expDiscount: 0 },
       data.perm);
     // 昔のセーブの「演算の持ち越し」を「引き継ぎ」に読みかえる
     if (data.perm && data.perm.carryOps && !state.perm.keep) state.perm.keep = 1;
@@ -1574,9 +1835,22 @@ document.getElementById('btn-to-upgrade').addEventListener('click', () => showSc
 document.getElementById('allin-minus').addEventListener('click', () => changeAllIn(-1));
 document.getElementById('allin-plus').addEventListener('click', () => changeAllIn(1));
 el.autoToggle.addEventListener('change', () => {
-  state.autoOn = el.autoToggle.checked;
+  setAuto(el.autoToggle.checked);
+});
+
+// オートの入/切。ヘッダーのボタン・チェックボックス・Esc キーの全部がここを通る
+function setAuto(on) {
+  if (!state.auto) return;
+  state.autoOn = on;
+  if (!on) clearTimeout(autoTimer);   // 次の1問が走る前に確実に止める
   save();
-  renderAuto();
+  renderAll();
+}
+el.autoStop.addEventListener('click', () => setAuto(!state.autoOn));
+document.addEventListener('keydown', ev => {
+  if (ev.key !== 'Escape' || editing || !state.auto || !state.autoOn) return;
+  ev.preventDefault();
+  setAuto(false);
 });
 document.getElementById('btn-edit-expr').addEventListener('click', startEdit);
 document.getElementById('btn-expr-apply').addEventListener('click', applyEdit);

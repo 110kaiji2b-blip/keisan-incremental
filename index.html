@@ -201,8 +201,15 @@
       </div>
     </div>
 
+    <div class="card achievements">
+      <h2 class="card-title">実績 <span class="ach-count" id="ach-count"></span></h2>
+      <p class="hint">条件を満たすと自動で達成。「+T」がついている実績は、達成した瞬間にTポイントがもらえます。</p>
+      <div class="ach-list" id="ach-list"></div>
+    </div>
+
     <div class="gobar two">
       <button class="btn" id="btn-to-prestige">転生 <span class="sigma-chip" id="sigma-chip">Σ 0</span></button>
+      <button type="button" class="btn auto-stop hidden" id="btn-auto-stop" title="Esc キーでも止められます">⏸ オート停止</button>
       <button class="btn primary big" id="btn-to-calc">計算に行く</button>
     </div>
   </section>
@@ -250,6 +257,8 @@
   </section>
 
 </main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script src="value.js"></script>
 <script src="game.js"></script>

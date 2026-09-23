@@ -84,7 +84,12 @@ const V = (function () {
       if (Math.abs(r) <= MAXN) return r;
     }
     const A = toSci(a);
-    return sci(Math.pow(A.m, n), A.e * n);
+    // 対数で計算する（b がどれだけ大きくても、b が小数でも壊れない）
+    const E = A.e * n;
+    const Ei = Math.floor(E);
+    const l = n * Math.log10(Math.abs(A.m)) + (E - Ei);
+    const k = Math.floor(l);
+    return sci(Math.pow(10, l - k), Ei + k);
   }
 
   // 割合をかける（部分点など）

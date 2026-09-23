@@ -675,5 +675,74 @@ body {
 .auto-switch:has(input:checked) { border-color: var(--accent); color: var(--accent); }
 .auto-info { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* アップグレード画面下部のオート停止ボタン */
+.gobar.two .btn.auto-stop {
+  padding: 0 16px;
+  border: 1px solid var(--warn);
+  border-radius: 99px;
+  background: rgba(240, 151, 90, .15);
+  color: var(--warn);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gobar.two .btn.auto-stop:hover { background: rgba(240, 151, 90, .28); }
+.gobar.two .btn.auto-stop.off { border-color: var(--accent); background: rgba(90, 209, 164, .12); color: var(--accent); }
+.gobar.two .btn.auto-stop.off:hover { background: rgba(90, 209, 164, .24); }
+@media (max-width: 520px) {
+  .gobar.two .btn.auto-stop { padding: 0 10px; font-size: 13px; }
+  .gobar.two .btn:not(.primary) { padding: 0 12px; }
+}
+
+/* ---------- 実績 ---------- */
+.ach-count { margin-left: 8px; font-size: 13px; color: var(--muted); font-weight: 400; }
+.ach-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; margin-top: 10px; }
+.ach {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  opacity: .55;
+}
+.ach.done { opacity: 1; border-color: rgba(90, 209, 164, .5); }
+.ach-mark { width: 1.4em; text-align: center; color: var(--muted); }
+.ach-text { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; flex: 1; }
+.ach-text b { font-size: 13px; }
+.ach-text small { font-size: 11px; color: var(--muted); }
+.ach-reward { font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.ach:not(.done) .ach-reward { color: var(--warn); }
+
+/* 実績達成の通知 */
+.toasts {
+  position: fixed;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 72px);
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 50;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .4);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity .3s, transform .3s;
+}
+.toast.show { opacity: 1; transform: none; }
+.toast-icon { font-size: 20px; }
+.toast-body { display: flex; flex-direction: column; flex: 1; line-height: 1.35; }
+.toast-body b { font-size: 14px; }
+.toast-body small { font-size: 11px; color: var(--muted); }
+.toast-reward { font-weight: 700; color: var(--accent); white-space: nowrap; }
+
 /* まとめて隠すための指定（ファイル末尾に置いて後勝ちにする） */
 .hidden { display: none; }

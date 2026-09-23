@@ -30,7 +30,8 @@ function newState() {
     points: 0,
     runEarned: 0,    // この周回で獲得した T の合計（転生時の Σ 計算に使う）
     digits: 1,     // 出題される数字の桁数
-    terms: 2,      // 1問あたりの数字の個数
+    terms: 2,      // たし算1問あたりの数字の個数
+    mulTerms: 2,   // かけ算1問あたりの数字の個数
     problems: 3,   // 1ラウンドの出題数
     multLevel: 0,    // 報酬倍率レベル
     logBase: 10,     // 報酬に使う対数の底（下げるほど報酬が伸びる）
@@ -211,8 +212,8 @@ const UPGRADES = [
     max: 5,
     level: s => s.terms,
     cost:  s => Math.round(12 * Math.pow(4, s.terms - 2)),
-    now:   s => `1問に数字が ${s.terms} 個`,
-    next:  s => `1問に数字が ${s.terms + 1} 個`,
+    now:   s => `たし算の1問に数字が ${s.terms} 個（ほかの演算には効かない）`,
+    next:  s => `たし算の1問に数字が ${s.terms + 1} 個`,
     apply: s => { s.terms += 1; },
   },
   {
@@ -234,6 +235,18 @@ const UPGRADES = [
     now:   s => (s.unlocked.mul ? 'かけ算が使える' : 'かけ算は出題されない'),
     next:  () => 'かけ算が出題に加わる（演算ボーナス +1・桁が一気に増える）',
     apply: s => { s.unlocked.mul = true; s.enabled.mul = true; },
+  },
+  {
+    id: 'mulTerms',
+    name: 'かけ算の項数アップ',
+    max: 5,
+    level: s => s.mulTerms,
+    cost:  s => Math.round(30 * Math.pow(5, s.mulTerms - 2)),
+    now:   s => (s.unlocked.mul
+      ? `かけ算の1問に数字が ${s.mulTerms} 個`
+      : `かけ算の1問に数字が ${s.mulTerms} 個（「かけ算 解放」を買うと効きはじめる）`),
+    next:  s => `かけ算の1問に数字が ${s.mulTerms + 1} 個（答えの桁が一気に伸びる）`,
+    apply: s => { s.mulTerms += 1; },
   },
   {
     id: 'partial',
@@ -527,7 +540,7 @@ function currentLog(s) {
 
 // その大きさで1ラウンド解いたときの報酬のおおよその値
 function estimateGain(L, s) {
-  const stacks = (s.enabled.mul || s.enabled.div || s.enabled.pow) ? s.terms : 1;
+  const stacks = s.enabled.mul ? s.mulTerms : 1;
   const base = (L * stacks) / Math.log10(s.logBase);
   const raw = base + varietyBonus(s) + s.perfectLevel + permBoost(s);
   const g = Math.floor(raw * multiplier(s));
@@ -564,6 +577,13 @@ function useSci(s) {
   return s.sciMode || (s.manualLog !== null && s.manualLog >= 15);
 }
 
+// 1問に並ぶ数字の個数。項数アップはたし算だけ、かけ算は専用のアップグレードで増える
+function termCount(s, op) {
+  if (op === 'add') return s.terms;
+  if (op === 'mul') return s.mulTerms;
+  return 2;
+}
+
 function makeProblem(s) {
   const ops = enabledOps(s);
   const op = ops.length ? ops[randInt(0, ops.length - 1)] : 'add';
@@ -572,7 +592,7 @@ function makeProblem(s) {
 
 /* ふつうの整数で出題する（序盤） */
 function makeIntProblem(s, op) {
-  const n = s.terms;
+  const n = termCount(s, op);
   const d = intDigits(s);
   let terms, answer;
 
@@ -608,7 +628,7 @@ function makeIntProblem(s, op) {
  *   たし算 → 指数をそろえて仮数を足す
  * なので、数がどれだけ大きくなっても手で解ける。 */
 function makeSciProblem(s, op) {
-  const n = s.terms;
+  const n = termCount(s, op);
   let terms, answer;
 
   if (op === 'pow') {
@@ -1470,10 +1490,10 @@ function renderStats() {
     ['正答率', `${acc}%  (${state.stats.correct} / ${state.stats.answered})`],
     ['1ラウンドの出題', `${state.problems} 問`],
     ['いまの式', state.manualLog !== null
-      ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × ${state.terms}個（手動）`
+      ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × たし算${state.terms}個・かけ算${state.mulTerms}個（手動）`
       : state.sciMode
-        ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × ${state.terms}個`
-        : `${state.digits}桁の数字 × ${state.terms}個`],
+        ? `${V.fmt(V.sci(3, currentLog(state)))} 前後 × たし算${state.terms}個・かけ算${state.mulTerms}個`
+        : `${state.digits}桁の数字 × たし算${state.terms}個・かけ算${state.mulTerms}個`],
     ['演算ボーナス', `+${varietyBonus(state)}`],
     ['報酬の基礎値', `⌊log${sub10(state.logBase)}(合計) × ${REWARD_SCALE}⌋`],
     ['パーフェクトボーナス', state.perfectLevel ? `+${state.perfectLevel}` : 'なし'],

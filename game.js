@@ -707,6 +707,11 @@ const MANUAL_MAX_LOG = 1e300;   // これ以上は数として扱えない
 function maxAutoLog(s) {
   return s.sciMode ? 9 * Math.pow(10, expOrder(s)) * expMul(s) : s.digits;
 }
+// 以降の問題の大きさとして引き継げる上限（アップグレードで出せる最大）。
+// 整数なら「桁数アップの桁」の数字 = 10^(digits-1) 台まで
+function manualCarryLimit(s) {
+  return s.sciMode ? maxAutoLog(s) : s.digits - 1;
+}
 function manualLimit(s) {
   const m = maxAutoLog(s);
   return m + Math.max(1, m * 0.05);
@@ -1221,8 +1226,9 @@ function applyEdit() {
   }
   p.answer = answer;
 
-  // 以降の問題も同じ大きさで出す
-  const L = Math.floor(V.log10(vals[0]));
+  // 以降の問題も同じ大きさで出す。
+  // ただし余裕ぶん（1つ上の桁）はこの問題だけで、以降はアップグレードの最大までにおさえる
+  const L = Math.min(Math.floor(V.log10(vals[0])), manualCarryLimit(state));
   if (isFinite(L) && L >= 0 && L <= MANUAL_MAX_LOG) {
     const cost = manualCost(L, state);
     if (V.cmp(cost, state.points) <= 0) {

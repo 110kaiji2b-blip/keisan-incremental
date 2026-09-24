@@ -10,6 +10,7 @@
 
 <header class="topbar">
   <h1>計算するインクリメンタルゲーム<span class="tentative">（仮）</span></h1>
+  <button type="button" class="lab-chip" id="lab-chip">研究・着せ替え</button>
   <div class="wallet">
     <span class="wallet-value" id="points">0</span>
     <span class="wallet-unit">T</span>
@@ -17,6 +18,8 @@
 </header>
 
 <main class="stage">
+
+  <div class="ch-banner hidden" id="ch-banner"></div>
 
   <!-- ================= ① 計算画面 ================= -->
   <section id="screen-calc" class="screen">
@@ -150,7 +153,7 @@
 
       <!-- 最終目標 -->
       <div class="goal-block">
-        <p class="block-label">最終目標　合計 10<sup>10<sup>100</sup></sup></p>
+        <p class="block-label" id="goal-label">最終目標　合計 10<sup>10<sup>100</sup></sup></p>
         <div class="goal-bar"><div class="goal-fill" id="goal-fill"></div></div>
         <p class="goal-note" id="goal-note"></p>
         <p class="goal-badge hidden" id="goal-badge">目標達成！ 合計が 10^10^100 を超えました</p>
@@ -250,9 +253,43 @@
       <p class="hint">永続強化は買った瞬間から有効で、転生してもそのまま残ります。</p>
     </div>
 
+    <div class="card challenges">
+      <h2 class="card-title">チャレンジ <span class="ach-count" id="ch-count"></span></h2>
+      <p class="hint">制限つきで最初からやり直し、1ラウンドの合計が目標に届けばクリア。
+        クリアすると永続ボーナスとΣがもらえます。いまの周回のΣは受け取ってから始まります。
+        引き継ぎ・飛び級・持ち込み資金・英才教育・予習は、チャレンジ中は効きません。</p>
+      <div id="ch-list" class="upgrade-list"></div>
+    </div>
+
     <div class="gobar two">
       <button class="btn" id="btn-prestige-back">アップグレードへ</button>
       <button class="btn primary big" id="btn-prestige-calc">計算に行く</button>
+    </div>
+  </section>
+
+  <!-- ================= ⑤ 研究・着せ替え画面 ================= -->
+  <section id="screen-lab" class="screen hidden">
+
+    <div class="card lab">
+      <h2 class="card-title">研究 <span class="ach-count" id="lab-count"></span></h2>
+      <p class="hint">研究は時間がたつと終わります。ゲームを閉じていても進みます。
+        同時に進められるのは1つだけ。終わった研究の効果はずっと続きます（転生しても消えません）。</p>
+      <div class="lab-current" id="lab-current"></div>
+      <div class="lab-tree" id="lab-tree"></div>
+    </div>
+
+    <div class="card looks">
+      <h2 class="card-title">着せ替え</h2>
+      <p class="hint">見た目だけが変わります。強さには関係しません。</p>
+      <h3 class="sub-title">色のテーマ</h3>
+      <div class="look-list" id="theme-list"></div>
+      <h3 class="sub-title">正解したときの演出</h3>
+      <div class="look-list" id="effect-list"></div>
+    </div>
+
+    <div class="gobar two">
+      <button class="btn" id="btn-lab-back">アップグレードへ</button>
+      <button class="btn primary big" id="btn-lab-calc">計算に行く</button>
     </div>
   </section>
 

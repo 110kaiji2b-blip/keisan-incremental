@@ -1,4 +1,4 @@
-:root {
+:root, [data-theme="default"] {
   --bg: #12151c;
   --panel: #1b2030;
   --panel-2: #232a3d;
@@ -746,3 +746,167 @@ body {
 
 /* まとめて隠すための指定（ファイル末尾に置いて後勝ちにする） */
 .hidden { display: none; }
+
+/* チャレンジ */
+.ch-banner {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: rgba(240, 151, 90, .1);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ch-banner.hidden { display: none; }
+.ch-banner b { color: var(--warn); }
+.upg.challenge.active { border-color: var(--warn); }
+.ch-btns { display: flex; gap: 8px; }
+.ch-btns .upg-buy { flex: 1; }
+
+/* ---------- 研究 ---------- */
+.lab-chip {
+  margin-left: auto;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.lab-chip:hover { color: var(--text); border-color: var(--accent-dark); }
+.lab-chip.busy { color: var(--accent); border-color: var(--accent-dark); font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) {
+  .topbar { padding: 10px 14px; gap: 8px; }
+  .topbar h1 { font-size: 14px; }
+  .topbar .tentative { display: none; }
+  .lab-chip { padding: 4px 9px; font-size: 12px; }
+}
+
+.lab-idle { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+.lab-now {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent-dark);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+}
+.lab-now-head { display: flex; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; }
+.lab-now-head span { color: var(--accent); font-weight: 700; }
+.lab-bar { height: 8px; margin: 8px 0; background: var(--bg); border-radius: 99px; overflow: hidden; }
+.lab-fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 1s linear; }
+.lab-now-effect { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+
+.lab-tree { display: grid; gap: 14px; }
+@media (min-width: 620px) { .lab-tree { grid-template-columns: repeat(2, 1fr); } }
+.lab-branch { display: flex; flex-direction: column; gap: 8px; }
+.lab-branch .sub-title { margin: 0; }
+.lab-node {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  font-size: 13px;
+}
+.lab-node p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.lab-node .upg-buy { margin-top: 8px; }
+.lab-node-head { display: flex; justify-content: space-between; gap: 8px; }
+.lab-node-head span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.lab-node.done { opacity: .6; }
+.lab-node.done b { color: var(--accent); }
+.lab-node.active { border-color: var(--accent); }
+.lab-node.ready { border-color: var(--accent-dark); }
+.lab-node.locked { opacity: .5; }
+.lab-need { color: var(--warn) !important; }
+
+/* ---------- 着せ替え ---------- */
+.look-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.look {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.look:hover:not(:disabled) { border-color: var(--accent-dark); }
+.look.selected { border-color: var(--accent); }
+.look.locked { opacity: .45; cursor: default; }
+.look small { color: var(--muted); font-size: 11px; }
+.look-name { font-weight: 600; font-size: 14px; }
+.look-preview { display: flex; gap: 3px; }
+.look-preview i { flex: 1; height: 18px; border-radius: 4px; border: 1px solid rgba(128, 128, 128, .35); }
+
+/* 正解の演出 */
+.expression-card.pop-ok { animation: pop-ok .35s ease-out; }
+@keyframes pop-ok {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+.confetti {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  pointer-events: none;
+  animation: confetti .9s ease-out forwards;
+}
+@keyframes confetti {
+  from { transform: translate(-50%, -50%) rotate(0); opacity: 1; }
+  to   { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 60px)) rotate(var(--rot)); opacity: 0; }
+}
+
+/* ---------- 色のテーマ ---------- */
+[data-theme="chalk"] {
+  --bg: #1d3329; --panel: #24402f; --panel-2: #2b4b39; --line: #3e6a52;
+  --text: #f1f5ea; --muted: #b3c8b6; --accent: #f3e36b; --accent-dark: #bfae3c;
+  --warn: #f7a8a0; --bad: #ff8f8f;
+}
+[data-theme="paper"] {
+  --bg: #f3efe4; --panel: #fffdf6; --panel-2: #efe8d8; --line: #d8cdb5;
+  --text: #2b2a26; --muted: #786f5e; --accent: #2a74c4; --accent-dark: #1d5796;
+  --warn: #cf6a1b; --bad: #c83a4a;
+}
+[data-theme="sakura"] {
+  --bg: #1b1320; --panel: #281c2d; --panel-2: #332439; --line: #4c3452;
+  --text: #f8eaf1; --muted: #c4a7b8; --accent: #ff9ec8; --accent-dark: #d16e9b;
+  --warn: #ffc47c; --bad: #ff7b8c;
+}
+[data-theme="neon"] {
+  --bg: #08081a; --panel: #10102a; --panel-2: #17173a; --line: #2c2c68;
+  --text: #e8f8ff; --muted: #8ea4cc; --accent: #3cf0ff; --accent-dark: #1fb0c0;
+  --warn: #ff4fd8; --bad: #ff5572;
+}
+[data-theme="gold"] {
+  --bg: #16120a; --panel: #211b0f; --panel-2: #2b2314; --line: #4a3c1f;
+  --text: #fff6dd; --muted: #c9b88b; --accent: #ffd24a; --accent-dark: #c69e2c;
+  --warn: #ff9f45; --bad: #ff6b6b;
+}
+[data-theme="cosmos"] {
+  --bg: #05060f; --panel: #0d1024; --panel-2: #141a36; --line: #262f5e;
+  --text: #eef0ff; --muted: #9aa3d6; --accent: #a78bfa; --accent-dark: #7b5bd6;
+  --warn: #f0abfc; --bad: #fb7185;
+}
+
+/* テーマごとの細かい色（標準テーマの見た目はそのまま） */
+[data-theme="chalk"], [data-theme="neon"], [data-theme="gold"] { --on-accent-dark: #1a1a14; --on-accent: #1a1a14; }
+[data-theme="paper"] { --on-accent-dark: #fff; --on-accent: #fff; }
+[data-theme="sakura"], [data-theme="cosmos"] { --on-accent-dark: #fff; --on-accent: #1a1420; }
+[data-theme]:not([data-theme="default"]) .btn:hover:not(:disabled) { background: var(--line); }
+[data-theme]:not([data-theme="default"]) .key:active { background: var(--line); }
+[data-theme]:not([data-theme="default"]) .btn.primary,
+[data-theme]:not([data-theme="default"]) .key.enter { color: var(--on-accent-dark); }
+[data-theme]:not([data-theme="default"]) .btn.primary:hover:not(:disabled),
+[data-theme]:not([data-theme="default"]) .key.enter:hover { color: var(--on-accent); }
+[data-theme]:not([data-theme="default"]) .badge.perfect,
+[data-theme]:not([data-theme="default"]) .goal-badge { background: var(--accent); color: var(--on-accent); }
